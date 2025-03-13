@@ -10,7 +10,8 @@
     "test": "jest",
     "build": "tsc",
     "lint": "eslint",
-    "update load": "node ./dist/updateLoad.js"
+    "update load": "node ./dist/updateLoad.js",
+    "material": "node ./dist/updateMaterial.js"
   },
   "keywords": [],
   "author": "",

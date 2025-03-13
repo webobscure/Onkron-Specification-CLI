@@ -10,7 +10,7 @@ const connection = mysql.createConnection({
 connection.connect((err) => {
     if (err) throw err;
     console.log('Успешное подключение к БД!');
-    let sql = 'SELECT * FROM products_specifications WHERE language_id = 1 AND specifications_id = ';
+    let sql = 'SELECT * FROM products_specifications WHERE language_id = 1 AND specifications_id = 61 ';
     connection.query(sql, (err, results) => {
       if (err) throw err;
       results.forEach((row)=> {
@@ -37,21 +37,31 @@ connection.connect((err) => {
           } 
           
        let newSpecification = row.specification
-          let productId = row.products_id;
           row.language_id = 2
           row.specification = newSpecification
           console.log(row.specification, row.products_id)
 
           // запрос на добавление должен выглядеть подобным образом: INSERT INTO products_specifications(products_id,language_id, specification, specifications_id) VALUES('52','2','232.98', '419')
          
-          let updateSql = `INSERT INTO products_specifications(products_id,language_id, specification, specifications_id) VALUES('${productId}','${row.language_id}','${row.specification}','${row.specifications_id}')`;
-          connection.query(updateSql, (err, updateResult) => {
-            if (err) throw err;
-            console.log('Обновлена таблица у продукта с ID:', productId);
-            console.log(updateResult)
-            console.log(newSpecification)
-            console.log(updateSql)
-          });
+          const upsertSql = `
+          INSERT INTO products_specifications 
+            (products_id, language_id, specification, specifications_id) 
+          VALUES (?, ?, ?, ?)
+          ON DUPLICATE KEY UPDATE
+            specification = VALUES(specification),
+            language_id = VALUES(language_id)
+        `;
+        
+        connection.execute(upsertSql, [
+          row.products_id,
+          row.language_id,
+          row.specification,
+          row.specifications_id
+        ], (err, result) => {
+          if (err) throw err;
+          console.log('Запись обновлена/добавлена для ID:', row.products_id);
+          console.log(result)
+        });
           
         }
       })
