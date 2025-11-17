@@ -32,9 +32,9 @@ async function getProductData(productId) {
 
 async function updateShopifyWeightBySku(sku, newWeight) {
   const productsRes = await axios.get(
-    `https://${process.env.SHOPIFY_US_STORE}.myshopify.com/admin/api/2025-07/products.json?limit=250`,
+    `https://${process.env.SHOPIFY_FR_STORE}.myshopify.com/admin/api/2025-07/products.json?limit=250`,
     {
-      headers: { "X-Shopify-Access-Token": process.env.SHOPIFY_US_ACCESS_TOKEN },
+      headers: { "X-Shopify-Access-Token": process.env.SHOPIFY_FR_ACCESS_TOKEN },
     }
   );
 
@@ -46,26 +46,24 @@ async function updateShopifyWeightBySku(sku, newWeight) {
     throw new Error(`Продукт с SKU ${sku} не найден`);
   }
 
-  // Конвертируем вес в фунты и устанавливаем единицу измерения
-  const weightInPounds = newWeight;
   
   const updatedVariants = product.variants.map((variant) =>
     variant.sku === sku
       ? { 
           id: variant.id, 
-          weight: weightInPounds, 
-          weight_unit: "lb" // устанавливаем фунты как единицу измерения
+          weight: newWeight, 
+          weight_unit: "kg" // устанавливаем kg как единицу измерения
         }
       : { id: variant.id }
   );
 
   await axios.put(
-    `https://${process.env.SHOPIFY_US_STORE}.myshopify.com/admin/api/2025-07/products/${product.id}.json`,
+    `https://${process.env.SHOPIFY_FR_STORE}.myshopify.com/admin/api/2025-07/products/${product.id}.json`,
     { product: { id: product.id, variants: updatedVariants } },
-    { headers: { "X-Shopify-Access-Token": process.env.SHOPIFY_US_ACCESS_TOKEN } }
+    { headers: { "X-Shopify-Access-Token": process.env.SHOPIFY_FR_ACCESS_TOKEN } }
   );
 
-  console.log(`Вес продукта с SKU ${sku} обновлён на ${weightInPounds} lb (было ${newWeight} кг)`);
+  console.log(`Вес продукта с SKU ${sku} обновлён на ${newWeight} кг`);
 }
 
 async function getAllProductIds() {
@@ -119,7 +117,7 @@ async function getAllProductIds() {
   }
 
   if (failedProducts.length) {
-    fs.writeFileSync("failed_products_us.log", JSON.stringify(failedProducts, null, 2));
+    fs.writeFileSync("failed_products_fr.log", JSON.stringify(failedProducts, null, 2));
     console.log(`Лог ошибок записан в failed_products_us.log`);
   }
 
