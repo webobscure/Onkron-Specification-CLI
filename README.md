@@ -50,6 +50,17 @@ AUTH_MAX_FAILED_ATTEMPTS=5
 AUTH_LOCKOUT_MS=300000
 TRANSFER_SOURCE_LANGUAGE_ID=1
 
+# optional Bitrix logging
+# option A: direct Bitrix REST webhook + dialog
+BITRIX_WEBHOOK_BASE_URL=https://your-company.bitrix24.ru/rest/<user_id>/<webhook_token>
+BITRIX_DIALOG_ID=chat101362
+# alternatively you can pass chat URL and dialog id will be parsed from IM_DIALOG
+BITRIX_CHAT_URL=https://your-company.bitrix24.ru/online/?IM_DIALOG=chat101362
+
+# option B: generic JSON webhook (if you use your own relay endpoint)
+BITRIX_WEBHOOK_URL=https://example.com/webhook
+BITRIX_TIMEOUT_MS=4000
+
 # optional specification IDs
 SPEC_ID_MATERIAL=61
 SPEC_ID_COLOR=60
@@ -309,6 +320,9 @@ scripts/
   - чекбоксы для выбора пунктов
   - для `spec_id=23`, `786`, `754`, `722`, `721`, `720`: конвертация только при `language_id=2` (US), иначе прямой перенос
   - перенос отмеченных пунктов в выбранный target-язык или `all`
+- Bitrix logging (опционально):
+  - отправка сводных логов при реальной записи (`dry-run=false` и `updated > 0`)
+  - каналы: `gui-task`, `gui-transfer`, `cli-task`
 
 По умолчанию `SPEC_IDS_AUTOFILL`:
 - `24` (vesa)

@@ -3,6 +3,7 @@
 const readline = require("readline");
 const { COUNTRY_BY_LANGUAGE_ID } = require("./config/specs");
 const { printStats } = require("./lib/runner");
+const { sendBitrixChangeLog } = require("./lib/bitrixLogger");
 const {
   updateMaterial,
   updateColor,
@@ -85,6 +86,19 @@ function resolveTargetLanguages(sourceLanguageId, targetSelection) {
 
 function collapseStats(stats) {
   return stats.length === 1 ? stats[0] : stats;
+}
+
+async function logCliRunToBitrix({ task, flags, result }) {
+  const stats = Array.isArray(result) ? result : [result];
+  await sendBitrixChangeLog({
+    channel: "cli-task",
+    task,
+    dryRun: Boolean(flags?.dryRun),
+    user: "cli",
+    sourceLanguageId: flags?.sourceLanguageId,
+    targetLanguageId: flags?.targetLanguageId,
+    stats,
+  });
 }
 
 async function runAcrossTargets(taskRunner, {
@@ -389,6 +403,7 @@ async function runInteractive() {
     }
 
     const result = await runTask(task, flags);
+    await logCliRunToBitrix({ task, flags, result });
     if (Array.isArray(result)) {
       result.forEach((item) => printStats(item));
     } else {
@@ -414,6 +429,7 @@ async function main() {
       }
 
       const result = await runTask(task, flags);
+      await logCliRunToBitrix({ task, flags, result });
       if (Array.isArray(result)) {
         result.forEach((item) => printStats(item));
       } else {

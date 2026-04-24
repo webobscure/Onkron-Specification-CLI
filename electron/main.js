@@ -8,6 +8,7 @@ const {
   getTransferProductSpecifications,
   transferSelectedProductSpecifications,
 } = require("../dist/lib/transfer");
+const { sendBitrixChangeLog } = require("../dist/lib/bitrixLogger");
 const { isAuthRequired, authenticate } = require("./auth");
 const ALL_TARGETS = "all";
 const TRANSFER_SOURCE_LANGUAGE_ID = Number(
@@ -175,6 +176,16 @@ ipcMain.handle("spec:run-task", async (_event, payload) => {
   const result = await runTask(task, flags);
   const tasks = Array.isArray(result) ? result : [result];
 
+  void sendBitrixChangeLog({
+    channel: "gui-task",
+    task,
+    dryRun: flags.dryRun,
+    user: sessionUser?.username || "local",
+    sourceLanguageId: flags.sourceLanguageId,
+    targetLanguageId: flags.targetLanguageId,
+    stats: tasks,
+  });
+
   return {
     ok: true,
     task,
@@ -237,7 +248,7 @@ ipcMain.handle("spec:transfer:submit", async (_event, payload) => {
     throw new Error("Valid productId is required");
   }
 
-  return transferSelectedProductSpecifications({
+  const result = await transferSelectedProductSpecifications({
     productId: normalizedProductId,
     sourceLanguageId: normalizeLanguageInput(
       TRANSFER_SOURCE_LANGUAGE_ID,
@@ -249,6 +260,22 @@ ipcMain.handle("spec:transfer:submit", async (_event, payload) => {
     specIds: Array.isArray(specIds) ? specIds.map((id) => Number(id)) : [],
     dryRun: Boolean(dryRun),
   });
+
+  void sendBitrixChangeLog({
+    channel: "gui-transfer",
+    task: "transfer-selected-specifications",
+    dryRun: Boolean(dryRun),
+    user: sessionUser?.username || "local",
+    sourceLanguageId: result.sourceLanguageId,
+    targetLanguageId: Array.isArray(result.targetLanguageIds)
+      ? result.targetLanguageIds.join(",")
+      : result.targetLanguageId,
+    productId: result.productId,
+    specIds: result.specIds,
+    stats: [result],
+  });
+
+  return result;
 });
 
 app.whenReady().then(() => {
