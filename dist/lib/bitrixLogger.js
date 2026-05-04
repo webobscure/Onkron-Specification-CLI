@@ -1,3 +1,5 @@
+const { SPEC_ID_NAMES } = require("../config/specs");
+
 const APP_TAG = "Webobscurium";
 const BITRIX_WEBHOOK_URL = String(process.env.BITRIX_WEBHOOK_URL || "").trim();
 const BITRIX_WEBHOOK_BASE_URL = String(
@@ -60,6 +62,17 @@ function sumBy(stats, key) {
   return stats.reduce((acc, item) => acc + (Number(item?.[key]) || 0), 0);
 }
 
+function resolveSpecNames(specIds) {
+  if (!Array.isArray(specIds) || specIds.length === 0) {
+    return [];
+  }
+
+  return specIds
+    .map((id) => Number(id))
+    .filter((id) => Number.isInteger(id) && id > 0)
+    .map((id) => SPEC_ID_NAMES[id] || `spec-${id}`);
+}
+
 function buildMessage({
   channel,
   task,
@@ -74,39 +87,43 @@ function buildMessage({
 }) {
   const lines = [
     `[${APP_TAG}]`,
-    `Channel: ${channel || "-"}`,
-    `Task: ${task || "-"}`,
-    `Mode: ${dryRun ? "dry-run" : "write"}`,
-    `Updated: ${sumBy(stats, "updated")}`,
-    `Skipped: ${sumBy(stats, "skipped")}`,
-    `Failed: ${sumBy(stats, "failed")}`,
+    `Канал: ${channel || "-"}`,
+    `Задача: ${task || "-"}`,
+    `Режим: ${dryRun ? "тестовый (dry-run)" : "запись"}`,
+    `Обновлено: ${sumBy(stats, "updated")}`,
+    `Пропущено: ${sumBy(stats, "skipped")}`,
+    `Ошибок: ${sumBy(stats, "failed")}`,
   ];
 
   if (user) {
-    lines.push(`User: ${user}`);
+    lines.push(`Пользователь: ${user}`);
   }
 
   if (sourceLanguageId) {
-    lines.push(`Source language: ${sourceLanguageId}`);
+    lines.push(`Исходный язык: ${sourceLanguageId}`);
   }
 
   if (targetLanguageId) {
-    lines.push(`Target: ${targetLanguageId}`);
+    lines.push(`Назначение: ${targetLanguageId}`);
   }
 
   if (productId) {
-    lines.push(`Product ID: ${productId}`);
+    lines.push(`ID товара: ${productId}`);
   }
 
   if (productName) {
-    lines.push(`Product: ${productName}`);
+    lines.push(`Товар: ${productName}`);
   }
 
   if (Array.isArray(specIds) && specIds.length > 0) {
-    lines.push(`Spec IDs: ${specIds.join(", ")}`);
+    lines.push(`ID спецификаций: ${specIds.join(", ")}`);
+    const specNames = resolveSpecNames(specIds);
+    if (specNames.length > 0) {
+      lines.push(`Спецификации: ${specNames.join(", ")}`);
+    }
   }
 
-  lines.push(`Time: ${new Date().toISOString()}`);
+  lines.push(`Время: ${new Date().toISOString()}`);
   return lines.join("\n");
 }
 
@@ -133,7 +150,7 @@ async function postToBitrixChat(message) {
   });
 
   if (!response.ok) {
-    throw new Error(`Bitrix chat API responded with HTTP ${response.status}`);
+    throw new Error(`Bitrix chat API вернул HTTP ${response.status}`);
   }
 
   return true;
@@ -154,7 +171,7 @@ async function postToGenericWebhook(payload) {
   });
 
   if (!response.ok) {
-    throw new Error(`Bitrix webhook responded with HTTP ${response.status}`);
+    throw new Error(`Bitrix webhook вернул HTTP ${response.status}`);
   }
 
   return true;
@@ -203,6 +220,7 @@ async function sendBitrixChangeLog({
     productId: productId ?? null,
     productName: productName ?? null,
     specIds: Array.isArray(specIds) ? specIds : [],
+    specNames: resolveSpecNames(specIds),
     updated,
     skipped: sumBy(normalizedStats, "skipped"),
     failed: sumBy(normalizedStats, "failed"),

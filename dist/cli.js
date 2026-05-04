@@ -1,7 +1,12 @@
 #!/usr/bin/env node
 
 const readline = require("readline");
-const { COUNTRY_BY_LANGUAGE_ID } = require("./config/specs");
+const {
+  COUNTRY_BY_LANGUAGE_ID,
+  AUTOFILL_SPEC_IDS,
+  HEIGHT_SPEC_IDS,
+  LOAD_SPEC_IDS,
+} = require("./config/specs");
 const { printStats } = require("./lib/runner");
 const { sendBitrixChangeLog } = require("./lib/bitrixLogger");
 const {
@@ -10,36 +15,39 @@ const {
   updateHeight,
   updateLoad,
   updateAutofill,
+  updateVesaRepair,
 } = require("./tasks");
 const ALL_TARGETS = "all";
 
 const HELP = `
-VamShop Specification CLI
+VamShop CLI Спецификаций
 
-Usage:
-  node dist/cli.js                     Start interactive menu
-  node dist/cli.js run <task> [flags] Run a task directly
+Использование:
+  node dist/cli.js                     Запуск интерактивного меню
+  node dist/cli.js run <task> [flags] Прямой запуск задачи
 
-Tasks:
+Задачи:
   material
   color
   height
   load
   autofill
+  vesa-repair
   all
 
-Flags:
-  --lang <id|all>       Target language for material (2..8) or all targets
-  --material-lang <id|all> Alias for --lang in task=all
-  --target-lang <id|all> Target language for color/height/load/autofill (default: all)
-  --source-lang <id>    Source language (default: 1)
-  --dry-run             Validate + report without DB writes
-  --help                Show this help
+Флаги:
+  --lang <id|all>          Язык назначения для material (2..8) или все языки
+  --material-lang <id|all> Синоним --lang в задаче all
+  --target-lang <id|all>   Язык назначения для color/height/load/autofill/vesa-repair (по умолчанию: all)
+  --source-lang <id>       Исходный язык (по умолчанию: 1)
+  --dry-run                Проверка и отчет без записи в БД
+  --help                   Показать эту справку
 
-Examples:
+Примеры:
   node dist/cli.js run material --lang 3
   node dist/cli.js run material --lang all
   node dist/cli.js run autofill --target-lang all
+  node dist/cli.js run vesa-repair --target-lang all
   node dist/cli.js run load --target-lang 2 --dry-run
   node dist/cli.js run all --material-lang all --target-lang all
 `;
@@ -60,7 +68,7 @@ function parseLanguageSelection(value, { allowAll = false } = {}) {
 
   const parsed = Number(normalized);
   if (!Number.isInteger(parsed) || parsed < 1) {
-    throw new Error(`Invalid language value: ${value}`);
+    throw new Error(`Некорректное значение языка: ${value}`);
   }
 
   return parsed;
@@ -78,7 +86,7 @@ function resolveTargetLanguages(sourceLanguageId, targetSelection) {
     .sort((a, b) => a - b);
 
   if (allTargets.length === 0) {
-    throw new Error("No target languages available for selected source language");
+    throw new Error("Для выбранного исходного языка нет доступных языков назначения");
   }
 
   return allTargets;
@@ -86,6 +94,58 @@ function resolveTargetLanguages(sourceLanguageId, targetSelection) {
 
 function collapseStats(stats) {
   return stats.length === 1 ? stats[0] : stats;
+}
+
+function countAutofillSpecs() {
+  return Array.isArray(AUTOFILL_SPEC_IDS) ? AUTOFILL_SPEC_IDS.length : 0;
+}
+
+function countHeightSpecs() {
+  return Array.isArray(HEIGHT_SPEC_IDS) ? HEIGHT_SPEC_IDS.length : 0;
+}
+
+function countLoadSpecs() {
+  return Array.isArray(LOAD_SPEC_IDS) ? LOAD_SPEC_IDS.length : 0;
+}
+
+function getRunPlan(task, flags) {
+  const sourceLanguageId = Number(flags?.sourceLanguageId) || 1;
+  const materialTargets = resolveTargetLanguages(
+    sourceLanguageId,
+    flags?.materialLanguageId
+  ).length;
+  const commonTargets = resolveTargetLanguages(
+    sourceLanguageId,
+    flags?.targetLanguageId
+  ).length;
+
+  const stagesByTask = {
+    material: materialTargets,
+    color: commonTargets,
+    height: commonTargets * countHeightSpecs(),
+    load: commonTargets * countLoadSpecs(),
+    autofill: commonTargets * countAutofillSpecs(),
+    "vesa-repair": commonTargets,
+  };
+
+  if (task === "all") {
+    return {
+      task,
+      stageTotal:
+        stagesByTask.material +
+        stagesByTask.color +
+        stagesByTask.height +
+        stagesByTask.load +
+        stagesByTask.autofill,
+      stagesByTask,
+    };
+  }
+
+  return {
+    task,
+    stageTotal: stagesByTask[task] || 0,
+    stagesByTask,
+  };
 }
 
 async function logCliRunToBitrix({ task, flags, result }) {
@@ -105,6 +165,7 @@ async function runAcrossTargets(taskRunner, {
   sourceLanguageId,
   targetSelection,
   dryRun,
+  onProgress = null,
 }) {
   const targetLanguages = resolveTargetLanguages(sourceLanguageId, targetSelection);
   const stats = [];
@@ -114,6 +175,7 @@ async function runAcrossTargets(taskRunner, {
       sourceLanguageId,
       targetLanguageId,
       dryRun,
+      onProgress,
     });
 
     if (Array.isArray(result)) {
@@ -160,7 +222,7 @@ function parseArgs(argv) {
     if (token === "--lang" || token === "--material-lang") {
       const parsedMaterial = parseLanguageSelection(args.shift(), { allowAll: true });
       if (parsedMaterial === null) {
-        throw new Error(`Missing value for ${token}`);
+        throw new Error(`Не указано значение для ${token}`);
       }
       flags.materialLanguageId = parsedMaterial;
       continue;
@@ -169,7 +231,7 @@ function parseArgs(argv) {
     if (token === "--target-lang") {
       const parsedTarget = parseLanguageSelection(args.shift(), { allowAll: true });
       if (parsedTarget === null) {
-        throw new Error("Missing value for --target-lang");
+        throw new Error("Не указано значение для --target-lang");
       }
       flags.targetLanguageId = parsedTarget;
       continue;
@@ -178,31 +240,36 @@ function parseArgs(argv) {
     if (token === "--source-lang") {
       const parsedSource = parseLanguageSelection(args.shift());
       if (parsedSource === null) {
-        throw new Error("Missing value for --source-lang");
+        throw new Error("Не указано значение для --source-lang");
       }
       flags.sourceLanguageId = parsedSource;
       continue;
     }
 
-    if (!command && ["material", "color", "height", "load", "autofill", "all"].includes(token)) {
+    if (!command && ["material", "color", "height", "load", "autofill", "vesa-repair", "all"].includes(token)) {
       command = "run";
       task = token;
       continue;
     }
 
-    throw new Error(`Unknown argument: ${token}`);
+    throw new Error(`Неизвестный аргумент: ${token}`);
   }
 
   return { command, task, flags };
 }
 
-async function runTask(task, flags) {
+async function runTask(task, flags, options = {}) {
+  const onProgress = typeof options.onProgress === "function"
+    ? options.onProgress
+    : null;
+
   switch (task) {
     case "material": {
       return runAcrossTargets(updateMaterial, {
         sourceLanguageId: flags.sourceLanguageId,
         targetSelection: flags.materialLanguageId,
         dryRun: flags.dryRun,
+        onProgress,
       });
     }
     case "color": {
@@ -210,6 +277,7 @@ async function runTask(task, flags) {
         sourceLanguageId: flags.sourceLanguageId,
         targetSelection: flags.targetLanguageId,
         dryRun: flags.dryRun,
+        onProgress,
       });
     }
     case "height": {
@@ -217,6 +285,7 @@ async function runTask(task, flags) {
         sourceLanguageId: flags.sourceLanguageId,
         targetSelection: flags.targetLanguageId,
         dryRun: flags.dryRun,
+        onProgress,
       });
     }
     case "load": {
@@ -224,6 +293,7 @@ async function runTask(task, flags) {
         sourceLanguageId: flags.sourceLanguageId,
         targetSelection: flags.targetLanguageId,
         dryRun: flags.dryRun,
+        onProgress,
       });
     }
     case "autofill": {
@@ -231,6 +301,15 @@ async function runTask(task, flags) {
         sourceLanguageId: flags.sourceLanguageId,
         targetSelection: flags.targetLanguageId,
         dryRun: flags.dryRun,
+        onProgress,
+      });
+    }
+    case "vesa-repair": {
+      return runAcrossTargets(updateVesaRepair, {
+        sourceLanguageId: flags.sourceLanguageId,
+        targetSelection: flags.targetLanguageId,
+        dryRun: flags.dryRun,
+        onProgress,
       });
     }
     case "all": {
@@ -239,6 +318,7 @@ async function runTask(task, flags) {
         sourceLanguageId: flags.sourceLanguageId,
         targetSelection: flags.materialLanguageId,
         dryRun: flags.dryRun,
+        onProgress,
       });
       stats.push(
         ...(Array.isArray(materialStats) ? materialStats : [materialStats])
@@ -247,6 +327,7 @@ async function runTask(task, flags) {
         sourceLanguageId: flags.sourceLanguageId,
         targetSelection: flags.targetLanguageId,
         dryRun: flags.dryRun,
+        onProgress,
       });
       stats.push(
         ...(Array.isArray(colorStats) ? colorStats : [colorStats])
@@ -255,6 +336,7 @@ async function runTask(task, flags) {
         sourceLanguageId: flags.sourceLanguageId,
         targetSelection: flags.targetLanguageId,
         dryRun: flags.dryRun,
+        onProgress,
       });
       stats.push(
         ...(Array.isArray(heightStats) ? heightStats : [heightStats])
@@ -263,6 +345,7 @@ async function runTask(task, flags) {
         sourceLanguageId: flags.sourceLanguageId,
         targetSelection: flags.targetLanguageId,
         dryRun: flags.dryRun,
+        onProgress,
       });
       stats.push(
         ...(Array.isArray(loadStats) ? loadStats : [loadStats])
@@ -271,6 +354,7 @@ async function runTask(task, flags) {
         sourceLanguageId: flags.sourceLanguageId,
         targetSelection: flags.targetLanguageId,
         dryRun: flags.dryRun,
+        onProgress,
       });
       stats.push(
         ...(Array.isArray(autofillStats) ? autofillStats : [autofillStats])
@@ -279,12 +363,12 @@ async function runTask(task, flags) {
       return stats;
     }
     default:
-      throw new Error(`Unknown task: ${task}`);
+      throw new Error(`Неизвестная задача: ${task}`);
   }
 }
 
 function printCountries() {
-  console.log("\nAvailable countries/languages:");
+  console.log("\nДоступные страны/языки:");
   for (const [languageId, countryCode] of Object.entries(COUNTRY_BY_LANGUAGE_ID)) {
     console.log(`  ${languageId}: ${countryCode}`);
   }
@@ -303,19 +387,20 @@ async function runInteractive() {
   });
 
   try {
-    console.log("VamShop Specification CLI\n");
-    console.log("1) Update material");
-    console.log("2) Update color");
-    console.log("3) Update height");
-    console.log("4) Update load");
-    console.log("5) Update autofill specs");
-    console.log("6) Run all tasks");
-    console.log("0) Exit\n");
+    console.log("VamShop CLI Спецификаций\n");
+    console.log("1) Обновить материал");
+    console.log("2) Обновить цвет");
+    console.log("3) Обновить высоту");
+    console.log("4) Обновить нагрузку");
+    console.log("5) Обновить автозаполнение");
+    console.log("6) Восстановить VESA");
+    console.log("7) Запустить все задачи");
+    console.log("0) Выход\n");
 
-    const selection = await ask(rl, "Select action: ");
+    const selection = await ask(rl, "Выберите действие: ");
 
     if (selection === "0") {
-      console.log("Exit");
+      console.log("Выход");
       return;
     }
 
@@ -326,14 +411,18 @@ async function runInteractive() {
       materialLanguageId: ALL_TARGETS,
     };
 
-    const dryRunAnswer = (await ask(rl, "Dry run? (y/N): ")).toLowerCase();
-    flags.dryRun = dryRunAnswer === "y" || dryRunAnswer === "yes";
+    const dryRunAnswer = (await ask(rl, "Тестовый запуск без записи? (y/N): ")).toLowerCase();
+    flags.dryRun =
+      dryRunAnswer === "y" ||
+      dryRunAnswer === "yes" ||
+      dryRunAnswer === "д" ||
+      dryRunAnswer === "да";
 
-    const sourceLanguage = await ask(rl, "Source language id [1]: ");
+    const sourceLanguage = await ask(rl, "ID исходного языка [1]: ");
     if (sourceLanguage) {
       const parsedSource = parseLanguageSelection(sourceLanguage);
       if (parsedSource === null) {
-        throw new Error("Source language id is required");
+        throw new Error("Нужно указать ID исходного языка");
       }
       flags.sourceLanguageId = parsedSource;
     }
@@ -342,7 +431,7 @@ async function runInteractive() {
     if (selection === "1") {
       task = "material";
       printCountries();
-      const materialLang = await ask(rl, "Material target language id [all]: ");
+      const materialLang = await ask(rl, "ID языка назначения для материала [all]: ");
       if (materialLang) {
         flags.materialLanguageId = parseLanguageSelection(materialLang, {
           allowAll: true,
@@ -350,7 +439,7 @@ async function runInteractive() {
       }
     } else if (selection === "2") {
       task = "color";
-      const target = await ask(rl, "Target language id [all]: ");
+      const target = await ask(rl, "ID языка назначения [all]: ");
       if (target) {
         flags.targetLanguageId = parseLanguageSelection(target, {
           allowAll: true,
@@ -358,7 +447,7 @@ async function runInteractive() {
       }
     } else if (selection === "3") {
       task = "height";
-      const target = await ask(rl, "Target language id [all]: ");
+      const target = await ask(rl, "ID языка назначения [all]: ");
       if (target) {
         flags.targetLanguageId = parseLanguageSelection(target, {
           allowAll: true,
@@ -366,7 +455,7 @@ async function runInteractive() {
       }
     } else if (selection === "4") {
       task = "load";
-      const target = await ask(rl, "Target language id [all]: ");
+      const target = await ask(rl, "ID языка назначения [all]: ");
       if (target) {
         flags.targetLanguageId = parseLanguageSelection(target, {
           allowAll: true,
@@ -374,16 +463,24 @@ async function runInteractive() {
       }
     } else if (selection === "5") {
       task = "autofill";
-      const target = await ask(rl, "Target language id [all]: ");
+      const target = await ask(rl, "ID языка назначения [all]: ");
       if (target) {
         flags.targetLanguageId = parseLanguageSelection(target, {
           allowAll: true,
         });
       }
     } else if (selection === "6") {
+      task = "vesa-repair";
+      const target = await ask(rl, "ID языка назначения [all]: ");
+      if (target) {
+        flags.targetLanguageId = parseLanguageSelection(target, {
+          allowAll: true,
+        });
+      }
+    } else if (selection === "7") {
       task = "all";
       printCountries();
-      const materialLang = await ask(rl, "Material target language id [all]: ");
+      const materialLang = await ask(rl, "ID языка назначения для материала [all]: ");
       if (materialLang) {
         flags.materialLanguageId = parseLanguageSelection(materialLang, {
           allowAll: true,
@@ -391,7 +488,7 @@ async function runInteractive() {
       }
       const target = await ask(
         rl,
-        "Target language for color/height/load/autofill [all]: "
+        "Язык назначения для color/height/load/autofill [all]: "
       );
       if (target) {
         flags.targetLanguageId = parseLanguageSelection(target, {
@@ -399,7 +496,7 @@ async function runInteractive() {
         });
       }
     } else {
-      throw new Error("Invalid action selected");
+      throw new Error("Выбрано некорректное действие");
     }
 
     const result = await runTask(task, flags);
@@ -425,7 +522,7 @@ async function main() {
 
     if (command === "run") {
       if (!task) {
-        throw new Error("Task is required. Use: node dist/cli.js run <task>");
+        throw new Error("Не указана задача. Используйте: node dist/cli.js run <task>");
       }
 
       const result = await runTask(task, flags);
@@ -440,8 +537,8 @@ async function main() {
 
     await runInteractive();
   } catch (error) {
-    console.error(`Error: ${error.message}`);
-    console.log("Use --help for usage examples.");
+    console.error(`Ошибка: ${error.message}`);
+    console.log("Используйте --help для примеров запуска.");
     process.exitCode = 1;
   }
 }
@@ -454,4 +551,5 @@ module.exports = {
   main,
   parseArgs,
   runTask,
+  getRunPlan,
 };

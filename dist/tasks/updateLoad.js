@@ -56,7 +56,7 @@ function normalizeSpecIds(specIds) {
     .filter((id) => Number.isInteger(id) && id > 0);
 
   if (normalized.length === 0) {
-    throw new Error("No valid spec ids provided for load update");
+    throw new Error("Не переданы корректные spec id для обновления load");
   }
 
   return [...new Set(normalized)];
@@ -82,6 +82,7 @@ async function updateLoad({
   sourceLanguageId = 1,
   dryRun = false,
   specIds = LOAD_SPEC_IDS,
+  onProgress = null,
 }) {
   const ids = normalizeSpecIds(specIds);
   const stats = [];
@@ -95,6 +96,7 @@ async function updateLoad({
         targetLanguageId,
         specificationId,
         dryRun,
+        onProgress,
         transform: (row) => {
           const value =
             row.specification === null || row.specification === undefined

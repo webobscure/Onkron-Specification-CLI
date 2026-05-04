@@ -9,11 +9,11 @@ const MATERIAL_TRANSLATIONS = {
     "Стекло": "Glass",
   },
   3: {
-    "Холоднокатаная сталь": "Acier lamine a froid",
+    "Холоднокатаная сталь": "Acier laminé à froid",
     "Нержавеющая сталь": "Acier inox",
     "Алюминий": "Aluminium",
     "Пластик": "Plastique",
-    "Бук": "Hetre",
+    "Бук": "Hêtre",
     "Резина": "Caoutchouc",
     "Стекло": "Verre",
   },
@@ -24,7 +24,7 @@ const MATERIAL_TRANSLATIONS = {
     "Пластик": "Plastica",
     "Бук": "Faggio",
     "Резина": "Gomma",
-    "Стекло": "Vetro",
+    "Стекло": "Bicchiere",
   },
   5: {
     "Холоднокатаная сталь": "Acero laminado en frio",
@@ -33,7 +33,7 @@ const MATERIAL_TRANSLATIONS = {
     "Пластик": "Plastico",
     "Бук": "Madera de haya",
     "Резина": "Goma",
-    "Стекло": "Vidrio",
+    "Стекло": "Vaso",
   },
   6: {
     "Холоднокатаная сталь": "Stahl SPCC",
@@ -60,7 +60,7 @@ const MATERIAL_TRANSLATIONS = {
     "Пластик": "Plastik",
     "Бук": "Buk",
     "Резина": "Guma",
-    "Стекло": "Szklo",
+    "Стекло": "Szkło",
   },
 };
 
@@ -303,6 +303,7 @@ const COUNTRY_BY_LANGUAGE_ID = {
 };
 
 const SPEC_IDS = {
+  vesa: Number(process.env.SPEC_ID_VESA || 24),
   material: Number(process.env.SPEC_ID_MATERIAL || 61),
   color: Number(process.env.SPEC_ID_COLOR || 60),
   height: Number(process.env.SPEC_ID_HEIGHT || 754),

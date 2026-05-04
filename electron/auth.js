@@ -22,7 +22,7 @@ function isAuthRequired() {
 function getAuthTableName() {
   const table = (process.env.AUTH_TABLE || "auth_users").trim();
   if (!/^[A-Za-z0-9_]+$/.test(table)) {
-    throw new Error("AUTH_TABLE contains invalid characters");
+    throw new Error("AUTH_TABLE содержит недопустимые символы");
   }
   return table;
 }
@@ -32,12 +32,12 @@ function getAuthDbConfig() {
   if (connectionUrl) {
     const parsed = new URL(connectionUrl);
     if (parsed.protocol !== "mysql:") {
-      throw new Error("AUTH_DB_URL must start with mysql://");
+      throw new Error("AUTH_DB_URL должен начинаться с mysql://");
     }
 
     const dbName = parsed.pathname.replace(/^\//, "").trim();
     if (!dbName) {
-      throw new Error("AUTH_DB_URL must include database name");
+      throw new Error("В AUTH_DB_URL должно быть указано имя базы данных");
     }
 
     const useSsl = parseBoolean(process.env.AUTH_DB_SSL, false);
@@ -63,11 +63,11 @@ function getAuthDbConfig() {
   const port = Number(process.env.AUTH_DB_PORT || process.env.port || 3306);
 
   if (!host || !user || !database) {
-    throw new Error("Missing auth DB config. Set AUTH_DB_HOST, AUTH_DB_USER, AUTH_DB_NAME");
+    throw new Error("Не хватает конфигурации БД авторизации. Укажите AUTH_DB_HOST, AUTH_DB_USER, AUTH_DB_NAME");
   }
 
   if (!Number.isInteger(port) || port < 1) {
-    throw new Error("AUTH_DB_PORT must be a positive integer");
+    throw new Error("AUTH_DB_PORT должен быть положительным целым числом");
   }
 
   const useSsl = parseBoolean(process.env.AUTH_DB_SSL, false);
@@ -186,7 +186,7 @@ async function authenticate(credentials) {
   if (!isAuthRequired()) {
     return {
       id: 0,
-      username: "local",
+      username: "локально",
     };
   }
 
@@ -194,13 +194,13 @@ async function authenticate(credentials) {
   const password = String(credentials?.password || "");
 
   if (!username || !password) {
-    throw new Error("Username and password are required");
+    throw new Error("Нужно указать логин и пароль");
   }
 
   const remainingMs = getRemainingLockMs(username);
   if (remainingMs > 0) {
     const seconds = Math.ceil(remainingMs / 1000);
-    throw new Error(`Too many attempts. Try again in ${seconds}s`);
+    throw new Error(`Слишком много попыток. Повторите через ${seconds} сек.`);
   }
 
   const row = await fetchUserByUsername(username);
@@ -210,7 +210,7 @@ async function authenticate(credentials) {
 
   if (!hasValidPassword || !isUserActive(row)) {
     registerFailure(username);
-    throw new Error("Invalid credentials");
+    throw new Error("Неверный логин или пароль");
   }
 
   clearFailures(username);

@@ -7,13 +7,13 @@ async function main() {
   const rounds = Number(process.env.AUTH_BCRYPT_ROUNDS || 12);
 
   if (!password) {
-    console.error("Usage: npm run auth:hash -- \"your-password\"");
+    console.error("Использование: npm run auth:hash -- \"ваш-пароль\"");
     process.exitCode = 1;
     return;
   }
 
   if (!Number.isInteger(rounds) || rounds < 8 || rounds > 15) {
-    console.error("AUTH_BCRYPT_ROUNDS must be an integer in range 8..15");
+    console.error("AUTH_BCRYPT_ROUNDS должен быть целым числом в диапазоне 8..15");
     process.exitCode = 1;
     return;
   }

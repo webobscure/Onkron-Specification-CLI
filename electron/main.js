@@ -2,7 +2,7 @@ const path = require("path");
 const fs = require("fs");
 const { app, BrowserWindow, ipcMain, nativeImage } = require("electron");
 const { COUNTRY_BY_LANGUAGE_ID } = require("../dist/config/specs");
-const { runTask } = require("../dist/cli");
+const { runTask, getRunPlan } = require("../dist/cli");
 const {
   listTransferProducts,
   getTransferProductSpecifications,
@@ -62,7 +62,7 @@ function getSessionState() {
     return {
       required: false,
       authenticated: true,
-      user: { id: 0, username: "local" },
+      user: { id: 0, username: "локально" },
     };
   }
 
@@ -79,7 +79,7 @@ function ensureAuthenticated() {
     return;
   }
   if (!session.authenticated) {
-    throw new Error("Authentication required");
+    throw new Error("Требуется авторизация");
   }
 }
 
@@ -114,7 +114,7 @@ function createWindow() {
     height: 860,
     minWidth: 1000,
     minHeight: 680,
-    title: "VamShop Spec GUI",
+    title: "VamShop Спецификации",
     backgroundColor: "#f4f1e8",
     ...(appIconPath ? { icon: appIconPath } : {}),
     webPreferences: {
@@ -159,7 +159,7 @@ ipcMain.handle("spec:run-task", async (_event, payload) => {
   } = payload || {};
 
   if (!task) {
-    throw new Error("Task is required");
+    throw new Error("Не указана задача");
   }
 
   const flags = {
@@ -172,15 +172,44 @@ ipcMain.handle("spec:run-task", async (_event, payload) => {
     }),
     dryRun: Boolean(dryRun),
   };
+  const plan = getRunPlan(task, flags);
+  const stageOrder = new Map();
+  let nextStageIndex = 0;
 
-  const result = await runTask(task, flags);
+  _event.sender.send("spec:progress-plan", {
+    type: "task-plan",
+    task,
+    stageTotal: Number(plan?.stageTotal) || 0,
+  });
+
+  const result = await runTask(task, flags, {
+    onProgress: (progress) => {
+      const stageKey = [
+        String(progress?.taskName || ""),
+        String(progress?.targetLanguageId || ""),
+        String(progress?.specificationId || ""),
+      ].join("|");
+
+      if (!stageOrder.has(stageKey)) {
+        nextStageIndex += 1;
+        stageOrder.set(stageKey, nextStageIndex);
+      }
+
+      _event.sender.send("spec:progress", {
+        type: "task",
+        stageIndex: stageOrder.get(stageKey),
+        stageTotal: Number(plan?.stageTotal) || 0,
+        ...progress,
+      });
+    },
+  });
   const tasks = Array.isArray(result) ? result : [result];
 
   void sendBitrixChangeLog({
     channel: "gui-task",
     task,
     dryRun: flags.dryRun,
-    user: sessionUser?.username || "local",
+    user: sessionUser?.username || "локально",
     sourceLanguageId: flags.sourceLanguageId,
     targetLanguageId: flags.targetLanguageId,
     stats: tasks,
@@ -221,7 +250,7 @@ ipcMain.handle("spec:transfer:get-product-specs", async (_event, payload) => {
 
   const normalizedProductId = Number(productId);
   if (!Number.isInteger(normalizedProductId) || normalizedProductId < 1) {
-    throw new Error("Valid productId is required");
+    throw new Error("Нужен корректный productId");
   }
 
   return getTransferProductSpecifications({
@@ -245,7 +274,7 @@ ipcMain.handle("spec:transfer:submit", async (_event, payload) => {
 
   const normalizedProductId = Number(productId);
   if (!Number.isInteger(normalizedProductId) || normalizedProductId < 1) {
-    throw new Error("Valid productId is required");
+    throw new Error("Нужен корректный productId");
   }
 
   const result = await transferSelectedProductSpecifications({
@@ -259,13 +288,19 @@ ipcMain.handle("spec:transfer:submit", async (_event, payload) => {
     }),
     specIds: Array.isArray(specIds) ? specIds.map((id) => Number(id)) : [],
     dryRun: Boolean(dryRun),
+    onProgress: (progress) => {
+      _event.sender.send("spec:progress", {
+        type: "transfer",
+        ...progress,
+      });
+    },
   });
 
   void sendBitrixChangeLog({
     channel: "gui-transfer",
     task: "transfer-selected-specifications",
     dryRun: Boolean(dryRun),
-    user: sessionUser?.username || "local",
+    user: sessionUser?.username || "локально",
     sourceLanguageId: result.sourceLanguageId,
     targetLanguageId: Array.isArray(result.targetLanguageIds)
       ? result.targetLanguageIds.join(",")

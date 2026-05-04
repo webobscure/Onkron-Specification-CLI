@@ -3,6 +3,7 @@ const { updateColor } = require("./updateColor");
 const { updateHeight } = require("./updateHeight");
 const { updateLoad } = require("./updateLoad");
 const { updateAutofill } = require("./updateAutofill");
+const { updateVesaRepair } = require("./updateVesaRepair");
 
 module.exports = {
   updateMaterial,
@@ -10,4 +11,5 @@ module.exports = {
   updateHeight,
   updateLoad,
   updateAutofill,
+  updateVesaRepair,
 };

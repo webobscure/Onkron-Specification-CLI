@@ -8,7 +8,7 @@ function normalizeSpecIds(specIds) {
     .filter((id) => Number.isInteger(id) && id > 0);
 
   if (normalized.length === 0) {
-    throw new Error("No valid spec ids provided for autofill");
+    throw new Error("Не переданы корректные spec id для autofill");
   }
 
   return [...new Set(normalized)];
@@ -19,6 +19,7 @@ async function updateAutofill({
   sourceLanguageId = 1,
   dryRun = false,
   specIds = AUTOFILL_SPEC_IDS,
+  onProgress = null,
 }) {
   const ids = normalizeSpecIds(specIds);
   const stats = [];
@@ -32,6 +33,7 @@ async function updateAutofill({
         targetLanguageId,
         specificationId,
         dryRun,
+        onProgress,
         transform: (row) => row.specification,
       })
     );

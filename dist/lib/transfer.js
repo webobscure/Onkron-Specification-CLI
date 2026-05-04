@@ -7,8 +7,11 @@ const {
   TRANSFER_SPEC_GROUPS,
   LOAD_SPEC_IDS,
   HEIGHT_SPEC_IDS,
+  MATERIAL_TRANSLATIONS,
+  COLOR_TRANSLATIONS_EN,
+  SPEC_IDS,
 } = require("../config/specs");
-const { withDbConnection, upsertSpecification } = require("./db");
+const { withDbConnection, upsertSpecification, replaceSpecificationValues } = require("./db");
 const {
   parseNumber,
   formatQuarterFraction,
@@ -64,11 +67,37 @@ const MM_TO_INCH_SPEC_ID_SET = new Set([
 ]);
 const DIMENSION_SPEC_ID_SET = new Set([68, 760, 762]);
 const M3_TO_FT3_SPEC_ID_SET = new Set([...EXTRA_VOLUME_SPEC_ID_SET]);
+const MULTI_VALUE_SPEC_ID_SET = new Set([SPEC_IDS.color, SPEC_IDS.material]);
+
+function translateColorValue(value, { sourceLanguageId, targetLanguageId }) {
+  if (targetLanguageId !== US_LANGUAGE_ID) {
+    return value;
+  }
+
+  if (sourceLanguageId === US_LANGUAGE_ID) {
+    return value;
+  }
+
+  return COLOR_TRANSLATIONS_EN[value] || null;
+}
+
+function translateMaterialValue(value, { sourceLanguageId, targetLanguageId }) {
+  const targetDictionary = MATERIAL_TRANSLATIONS[targetLanguageId];
+  if (!targetDictionary) {
+    return value;
+  }
+
+  if (sourceLanguageId === 1) {
+    return targetDictionary[value] || null;
+  }
+
+  return value;
+}
 
 function normalizeInt(value, { name, min = 1 } = {}) {
   const parsed = Number(value);
   if (!Number.isInteger(parsed) || parsed < min) {
-    throw new Error(`Invalid ${name || "number"}: ${value}`);
+    throw new Error(`Некорректное значение ${name || "числа"}: ${value}`);
   }
   return parsed;
 }
@@ -80,7 +109,7 @@ function normalizeSpecIds(specIds) {
     .filter((id) => Number.isInteger(id) && id > 0);
 
   if (normalized.length === 0) {
-    throw new Error("No valid spec ids provided for transfer");
+    throw new Error("Не переданы корректные spec id для переноса");
   }
 
   return [...new Set(normalized)];
@@ -123,7 +152,7 @@ function resolveTargetLanguageIds(sourceLanguageId, targetLanguageId) {
     .sort((a, b) => a - b);
 
   if (targetIds.length === 0) {
-    throw new Error("No target languages available for transfer");
+    throw new Error("Нет доступных языков назначения для переноса");
   }
 
   return targetIds;
@@ -207,7 +236,7 @@ function formatVolumeValue(value) {
 function mapProductMetaFromRow(row, productId) {
   const name = row?.products_name ? String(row.products_name).trim() : "";
   const model = row?.products_model ? String(row.products_model).trim() : "";
-  const productName = name || model || `Product #${productId}`;
+  const productName = name || model || `Товар #${productId}`;
 
   return {
     productName,
@@ -246,7 +275,7 @@ async function fetchTransferProductMeta(connection, { productId, languageId }) {
     }
 
     return {
-      productName: `Product #${productId}`,
+      productName: `Товар #${productId}`,
       productModel: null,
       productImageUrl: null,
       productStatus: null,
@@ -267,6 +296,14 @@ function transformTransferValue({
 
   if (!value) {
     return null;
+  }
+
+  if (specificationId === SPEC_IDS.color) {
+    return translateColorValue(value, { sourceLanguageId, targetLanguageId });
+  }
+
+  if (specificationId === SPEC_IDS.material) {
+    return translateMaterialValue(value, { sourceLanguageId, targetLanguageId });
   }
 
   if (KG_TO_LBS_SPEC_ID_SET.has(specificationId)) {
@@ -398,9 +435,10 @@ async function listTransferProducts({
         .filter((id) => Number.isInteger(id) && id > 0)
         .map((id) => ({
           id,
-          label: `Product #${id}`,
+          label: `Товар #${id}`,
           name: null,
           model: null,
+          ean: null,
           imageUrl: null,
           status: null,
         }));
@@ -413,6 +451,7 @@ async function listTransferProducts({
           ps.products_id,
           MAX(pd.products_name) AS products_name,
           MAX(p.products_model) AS products_model,
+          MAX(p.products_ean) AS products_ean,
           MAX(p.products_image) AS products_image,
           MAX(p.products_status) AS products_status
         FROM products_specifications ps
@@ -431,9 +470,10 @@ async function listTransferProducts({
             CAST(ps.products_id AS CHAR) LIKE ?
             OR COALESCE(pd.products_name, "") LIKE ?
             OR COALESCE(p.products_model, "") LIKE ?
+            OR COALESCE(CAST(p.products_ean AS CHAR), "") LIKE ?
           )
         `;
-        params.push(wildcard, wildcard, wildcard);
+        params.push(wildcard, wildcard, wildcard, wildcard);
       }
 
       query += `
@@ -453,7 +493,8 @@ async function listTransferProducts({
 
           const name = row.products_name ? String(row.products_name).trim() : "";
           const model = row.products_model ? String(row.products_model).trim() : "";
-          const labelBase = name || `Product #${id}`;
+          const ean = row.products_ean ? String(row.products_ean).trim() : "";
+          const labelBase = name || `Товар #${id}`;
           const label = model ? `${labelBase} (${model})` : labelBase;
 
           return {
@@ -461,6 +502,7 @@ async function listTransferProducts({
             label,
             name: name || null,
             model: model || null,
+            ean: ean || null,
             imageUrl: buildProductImageUrl(row.products_image),
             status: normalizeProductStatus(row.products_status),
           };
@@ -547,39 +589,76 @@ async function transferSelectedProductSpecifications({
   productId,
   specIds = TRANSFER_SPEC_IDS,
   dryRun = false,
+  onProgress = null,
 }) {
   const langId = normalizeInt(sourceLanguageId, { name: "source language id" });
   const normalizedProductId = normalizeInt(productId, { name: "product id" });
   const selectedSpecIds = normalizeSpecIds(specIds);
   const targetLanguageIds = resolveTargetLanguageIds(langId, targetLanguageId);
+  const multiValueSpecIds = selectedSpecIds.filter((id) =>
+    MULTI_VALUE_SPEC_ID_SET.has(Number(id))
+  );
+  const singleValueSpecIds = selectedSpecIds.filter(
+    (id) => !MULTI_VALUE_SPEC_ID_SET.has(Number(id))
+  );
 
   return withDbConnection(async (connection) => {
-    const [sourceRows] = await connection.execute(
-      `
-        SELECT
-          ps.products_id,
-          ps.specifications_id,
-          ps.specification
-        FROM products_specifications ps
-        INNER JOIN (
+    let sourceRows = [];
+    if (singleValueSpecIds.length > 0) {
+      const [singleRows] = await connection.execute(
+        `
           SELECT
-            specifications_id,
-            MAX(products_specification_id) AS max_id
-          FROM products_specifications
-          WHERE language_id = ?
-            AND products_id = ?
-            AND specifications_id IN (${selectedSpecIds.map(() => "?").join(", ")})
-          GROUP BY specifications_id
-        ) latest
-          ON latest.max_id = ps.products_specification_id
-      `,
-      [langId, normalizedProductId, ...selectedSpecIds]
-    );
+            ps.products_id,
+            ps.specifications_id,
+            ps.specification
+          FROM products_specifications ps
+          INNER JOIN (
+            SELECT
+              specifications_id,
+              MAX(products_specification_id) AS max_id
+            FROM products_specifications
+            WHERE language_id = ?
+              AND products_id = ?
+              AND specifications_id IN (${singleValueSpecIds.map(() => "?").join(", ")})
+            GROUP BY specifications_id
+          ) latest
+            ON latest.max_id = ps.products_specification_id
+        `,
+        [langId, normalizedProductId, ...singleValueSpecIds]
+      );
+      sourceRows = sourceRows.concat(singleRows);
+    }
+
+    if (multiValueSpecIds.length > 0) {
+      const [multiRows] = await connection.execute(
+        `
+          SELECT
+            ps.products_id,
+            ps.specifications_id,
+            ps.specification
+          FROM products_specifications ps
+          INNER JOIN (
+            SELECT
+              specifications_id,
+              specification,
+              MAX(products_specification_id) AS max_id
+            FROM products_specifications
+            WHERE language_id = ?
+              AND products_id = ?
+              AND specifications_id IN (${multiValueSpecIds.map(() => "?").join(", ")})
+            GROUP BY specifications_id, specification
+          ) latest
+            ON latest.max_id = ps.products_specification_id
+        `,
+        [langId, normalizedProductId, ...multiValueSpecIds]
+      );
+      sourceRows = sourceRows.concat(multiRows);
+    }
 
     const stats = {
       taskName: "transfer-selected-specifications",
       productId: normalizedProductId,
-      productName: `Product #${normalizedProductId}`,
+      productName: `Товар #${normalizedProductId}`,
       productModel: null,
       productImageUrl: null,
       sourceLanguageId: langId,
@@ -593,6 +672,24 @@ async function transferSelectedProductSpecifications({
       dryRun: Boolean(dryRun),
       details: [],
     };
+    let done = 0;
+
+    const notifyProgress = () => {
+      if (typeof onProgress !== "function") {
+        return;
+      }
+
+      onProgress({
+        scope: "transfer",
+        taskName: stats.taskName,
+        productId: normalizedProductId,
+        done,
+        total: stats.total,
+        updated: stats.updated,
+        skipped: stats.skipped,
+        failed: stats.failed,
+      });
+    };
 
     const meta = await fetchTransferProductMeta(connection, {
       productId: normalizedProductId,
@@ -601,6 +698,7 @@ async function transferSelectedProductSpecifications({
     stats.productName = meta.productName;
     stats.productModel = meta.productModel;
     stats.productImageUrl = meta.productImageUrl;
+    notifyProgress();
 
     for (const targetId of targetLanguageIds) {
       const targetStat = {
@@ -609,9 +707,38 @@ async function transferSelectedProductSpecifications({
         skipped: 0,
         failed: 0,
       };
+      const multiValuesBySpecId = new Map();
 
       for (const row of sourceRows) {
         const specificationId = Number(row.specifications_id);
+        if (MULTI_VALUE_SPEC_ID_SET.has(specificationId)) {
+          const transformedValue = transformTransferValue({
+            specificationId,
+            sourceValue: row.specification,
+            sourceLanguageId: langId,
+            targetLanguageId: targetId,
+          });
+
+          if (
+            transformedValue === null ||
+            transformedValue === undefined ||
+            String(transformedValue).trim() === ""
+          ) {
+            stats.skipped += 1;
+            targetStat.skipped += 1;
+            done += 1;
+            notifyProgress();
+            continue;
+          }
+
+          const values = multiValuesBySpecId.get(specificationId) || [];
+          if (!values.includes(transformedValue)) {
+            values.push(transformedValue);
+          }
+          multiValuesBySpecId.set(specificationId, values);
+          continue;
+        }
+
         const transformedValue = transformTransferValue({
           specificationId,
           sourceValue: row.specification,
@@ -626,6 +753,8 @@ async function transferSelectedProductSpecifications({
         ) {
           stats.skipped += 1;
           targetStat.skipped += 1;
+          done += 1;
+          notifyProgress();
           continue;
         }
 
@@ -644,6 +773,31 @@ async function transferSelectedProductSpecifications({
         } catch (error) {
           stats.failed += 1;
           targetStat.failed += 1;
+        } finally {
+          done += 1;
+          notifyProgress();
+        }
+      }
+
+      for (const [specificationId, values] of multiValuesBySpecId.entries()) {
+        try {
+          if (!dryRun) {
+            await replaceSpecificationValues(connection, {
+              productId: normalizedProductId,
+              languageId: targetId,
+              specificationId,
+              values,
+            });
+          }
+
+          stats.updated += values.length;
+          targetStat.updated += values.length;
+        } catch (error) {
+          stats.failed += values.length;
+          targetStat.failed += values.length;
+        } finally {
+          done += values.length;
+          notifyProgress();
         }
       }
 

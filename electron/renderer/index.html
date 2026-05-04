@@ -1,36 +1,47 @@
 <!doctype html>
-<html lang="en">
+<html lang="ru">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>VamShop Spec GUI</title>
+    <title>VamShop Спецификации</title>
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
     <div class="noise"></div>
     <div id="requestLoader" class="request-loader hidden" role="status" aria-live="polite">
       <div class="request-loader-card">
-        <span class="spinner" aria-hidden="true"></span>
-        <p id="requestLoaderText">Выполняется запрос...</p>
+        <div class="request-loader-head">
+          <span class="spinner" aria-hidden="true"></span>
+          <p id="requestLoaderText">Выполняется запрос...</p>
+        </div>
+        <div id="requestLoaderProgressWrap" class="request-loader-progress hidden">
+          <div class="request-loader-progress-meta">
+            <span id="requestLoaderProgressLabel">Подготовка...</span>
+            <span id="requestLoaderProgressCount">0 / 0</span>
+          </div>
+          <div class="request-loader-progress-track">
+            <div id="requestLoaderProgressBar" class="request-loader-progress-bar"></div>
+          </div>
+        </div>
       </div>
     </div>
     <section id="authGate" class="auth-gate">
       <div class="auth-card">
-        <p class="eyebrow">Restricted Access</p>
-        <h2>Sign In</h2>
+        <p class="eyebrow">Ограниченный доступ</p>
+        <h2>Вход</h2>
         <p class="auth-subtitle">
-          Enter credentials from your Railway auth database.
+          Введите логин и пароль из вашей Railway-базы авторизации.
         </p>
         <form id="loginForm" class="auth-form">
           <label>
-            Username
+            Логин
             <input id="loginUsername" type="text" autocomplete="username" required />
           </label>
           <label>
-            Password
+            Пароль
             <input id="loginPassword" type="password" autocomplete="current-password" required />
           </label>
-          <button id="loginButton" class="auth-submit" type="submit">Sign in</button>
+          <button id="loginButton" class="auth-submit" type="submit">Войти</button>
         </form>
         <p id="loginMessage" class="auth-message"></p>
       </div>
@@ -38,33 +49,33 @@
 
     <main class="app-shell">
       <header class="hero">
-        <p class="eyebrow">VamShop Automation</p>
+        <p class="eyebrow">Автоматизация VamShop</p>
         <div class="hero-meta">
-          <span id="sessionState" class="session-state">Checking session...</span>
-          <button id="logoutButton" class="ghost" hidden>Logout</button>
+          <span id="sessionState" class="session-state">Проверка сессии...</span>
+          <button id="logoutButton" class="ghost" hidden>Выйти</button>
         </div>
-        <h1>Specification Control Center</h1>
+        <h1>Центр управления спецификациями</h1>
         <p class="subtitle">
           Управляйте массовым заполнением спецификаций через GUI без ручного запуска CLI-команд.
         </p>
       </header>
 
-      <section class="panel settings" aria-label="Settings">
-        <h2>Run Settings</h2>
+      <section class="panel settings" aria-label="Настройки">
+        <h2>Настройки запуска</h2>
 
         <div class="form-grid">
           <label>
-            Source language
+            Исходный язык
             <input id="sourceLanguageId" type="number" min="1" value="1" />
           </label>
 
           <label>
-            Material target language
+            Язык назначения для материала
             <select id="materialLanguageId"></select>
           </label>
 
           <label>
-            Color/Height/Load target language
+            Язык назначения для Color/Height/Load
             <select id="targetLanguageId"></select>
           </label>
 
@@ -75,37 +86,41 @@
         </div>
       </section>
 
-      <section class="panel actions" aria-label="Actions">
-        <h2>Specification Tasks</h2>
+      <section class="panel actions" aria-label="Действия">
+        <h2>Задачи спецификаций</h2>
         <div class="cards">
           <button class="task-card" data-task="material">
-            <strong>Material</strong>
+            <strong>Материал</strong>
             <span>Переводы материалов</span>
           </button>
           <button class="task-card" data-task="color">
-            <strong>Color</strong>
+            <strong>Цвет</strong>
             <span>Переводы цвета</span>
           </button>
           <button class="task-card" data-task="height">
-            <strong>Height</strong>
+            <strong>Высота</strong>
             <span>Конвертация высоты</span>
           </button>
           <button class="task-card" data-task="load">
-            <strong>Load</strong>
+            <strong>Нагрузка</strong>
             <span>Конвертация нагрузки</span>
           </button>
           <button class="task-card" data-task="autofill">
-            <strong>Autofill</strong>
+            <strong>Автозаполнение</strong>
             <span>Копирование spec ID по списку</span>
           </button>
+          <button class="task-card" data-task="vesa-repair">
+            <strong>VESA Repair</strong>
+            <span>Принудительная синхронизация spec 24</span>
+          </button>
           <button class="task-card accent" data-task="all">
-            <strong>Run All</strong>
+            <strong>Запустить все</strong>
             <span>Полный прогон всех функций</span>
           </button>
         </div>
       </section>
 
-      <section class="panel transfer" aria-label="Manual Transfer">
+      <section class="panel transfer" aria-label="Ручной перенос">
         <div class="transfer-header">
           <h2>Выбрать Продукт Для Переноса</h2>
           <button id="loadTransferProducts" class="ghost">Найти продукты</button>
@@ -113,7 +128,7 @@
 
         <div class="transfer-controls">
           <label>
-            Поиск по ID / названию / модели
+            Поиск по ID / названию / модели / EAN
             <input id="transferSearch" type="text" placeholder="например 12345 или ONKRON N1L" />
           </label>
         </div>
@@ -124,7 +139,12 @@
           Продукт не выбран.
         </p>
 
-        <div id="transferSpecs" class="transfer-specs"></div>
+        <div class="transfer-selection-tools">
+          <button id="openTransferSpecsModal" class="ghost" disabled>Выбрать пункты</button>
+          <span id="transferSelectionSummary" class="transfer-selection-summary">
+            Выбрано пунктов: 0
+          </span>
+        </div>
 
         <div class="transfer-actions">
           <button id="submitTransfer" class="task-card accent transfer-submit">
@@ -134,20 +154,53 @@
         </div>
       </section>
 
-      <section class="panel output" aria-label="Output">
+      <section class="panel output" aria-label="Вывод">
         <div class="output-header">
-          <h2>Execution Report</h2>
+          <h2>Отчет выполнения</h2>
           <div class="output-tools">
             <span id="requestStatus" class="request-status hidden">
               <span class="spinner spinner-small" aria-hidden="true"></span>
               <span id="requestStatusText">Запрос выполняется...</span>
             </span>
-            <button id="clearOutput" class="ghost">Clear</button>
+            <button id="clearOutput" class="ghost">Очистить</button>
           </div>
         </div>
-        <pre id="output">Ready.</pre>
+        <div id="progressWrap" class="progress-wrap hidden" aria-live="polite">
+          <div class="progress-meta">
+            <span id="progressLabel">Подготовка...</span>
+            <span id="progressCount">0 / 0</span>
+          </div>
+          <div class="progress-track">
+            <div id="progressBar" class="progress-bar"></div>
+          </div>
+        </div>
+        <pre id="output">Готово.</pre>
       </section>
     </main>
+
+    <div id="transferSpecsModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="transferSpecsModalTitle">
+      <div class="modal-card">
+        <div class="modal-header">
+          <h3 id="transferSpecsModalTitle">Выбор пунктов спецификации</h3>
+          <button id="closeTransferSpecsModal" class="ghost" type="button">Закрыть</button>
+        </div>
+        <p class="modal-subtitle">
+          Отметьте пункты для переноса вручную.
+        </p>
+        <label class="modal-search">
+          Поиск по ID / названию / значению пункта
+          <input id="transferSpecsSearch" type="text" placeholder="например 754, гарантия, 32" />
+        </label>
+        <div class="modal-toolbar">
+          <button id="selectAllTransferSpecs" class="ghost" type="button">Выбрать все</button>
+          <button id="clearTransferSpecsSelection" class="ghost" type="button">Очистить выбор</button>
+          <span id="transferSelectionSummaryModal" class="transfer-selection-summary">
+            Выбрано пунктов: 0
+          </span>
+        </div>
+        <div id="transferSpecs" class="transfer-specs"></div>
+      </div>
+    </div>
 
     <script src="./renderer.js"></script>
   </body>

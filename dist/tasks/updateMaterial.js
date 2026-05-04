@@ -1,19 +1,27 @@
 const { MATERIAL_TRANSLATIONS, SPEC_IDS } = require("../config/specs");
-const { runSpecificationUpdate } = require("../lib/runner");
+const { runMultiValueSpecificationUpdate } = require("../lib/multiValueRunner");
 
-async function updateMaterial({ targetLanguageId, sourceLanguageId = 1, dryRun = false }) {
+async function updateMaterial({
+  targetLanguageId,
+  sourceLanguageId = 1,
+  dryRun = false,
+  onProgress = null,
+}) {
   const dictionary = MATERIAL_TRANSLATIONS[targetLanguageId];
   if (!dictionary) {
-    throw new Error(`No material dictionary for language_id=${targetLanguageId}`);
+    throw new Error(`Нет словаря материалов для language_id=${targetLanguageId}`);
   }
 
-  return runSpecificationUpdate({
+  return runMultiValueSpecificationUpdate({
     taskName: "update-material",
     sourceLanguageId,
     targetLanguageId,
     specificationId: SPEC_IDS.material,
     dryRun,
-    transform: (row) => dictionary[row.specification] || null,
+    onProgress,
+    allowUpdateIfTargetEqualsSource: true,
+    allowUpdateIfTargetSubsetOfTransformed: true,
+    transformValue: (value) => dictionary[value] || null,
   });
 }
 

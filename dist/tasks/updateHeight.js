@@ -18,7 +18,7 @@ function normalizeSpecIds(specIds) {
     .filter((id) => Number.isInteger(id) && id > 0);
 
   if (normalized.length === 0) {
-    throw new Error("No valid spec ids provided for height update");
+    throw new Error("Не переданы корректные spec id для обновления height");
   }
 
   return [...new Set(normalized)];
@@ -29,6 +29,7 @@ async function updateHeight({
   sourceLanguageId = 1,
   dryRun = false,
   specIds = HEIGHT_SPEC_IDS,
+  onProgress = null,
 }) {
   const ids = normalizeSpecIds(specIds);
   const stats = [];
@@ -42,6 +43,7 @@ async function updateHeight({
         targetLanguageId,
         specificationId,
         dryRun,
+        onProgress,
         transform: (row) => {
           const value =
             row.specification === null || row.specification === undefined

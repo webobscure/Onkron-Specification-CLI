@@ -18,7 +18,7 @@ function parseBoolean(value, fallback = false) {
 function getAuthTableName() {
   const table = (process.env.AUTH_TABLE || "auth_users").trim();
   if (!/^[A-Za-z0-9_]+$/.test(table)) {
-    throw new Error("AUTH_TABLE contains invalid characters");
+    throw new Error("AUTH_TABLE содержит недопустимые символы");
   }
   return table;
 }
@@ -28,12 +28,12 @@ function getDbConfig() {
   if (connectionUrl) {
     const parsed = new URL(connectionUrl);
     if (parsed.protocol !== "mysql:") {
-      throw new Error("AUTH_DB_URL must start with mysql://");
+      throw new Error("AUTH_DB_URL должен начинаться с mysql://");
     }
 
     const dbName = parsed.pathname.replace(/^\//, "").trim();
     if (!dbName) {
-      throw new Error("AUTH_DB_URL must include database name");
+      throw new Error("В AUTH_DB_URL должно быть указано имя базы данных");
     }
 
     const useSsl = parseBoolean(process.env.AUTH_DB_SSL, false);
@@ -59,11 +59,11 @@ function getDbConfig() {
   const port = Number(process.env.AUTH_DB_PORT || process.env.port || 3306);
 
   if (!host || !user || !database) {
-    throw new Error("Missing auth DB config. Set AUTH_DB_HOST, AUTH_DB_USER, AUTH_DB_NAME");
+    throw new Error("Не хватает конфигурации БД авторизации. Укажите AUTH_DB_HOST, AUTH_DB_USER, AUTH_DB_NAME");
   }
 
   if (!Number.isInteger(port) || port < 1) {
-    throw new Error("AUTH_DB_PORT must be a positive integer");
+    throw new Error("AUTH_DB_PORT должен быть положительным целым числом");
   }
 
   const useSsl = parseBoolean(process.env.AUTH_DB_SSL, false);
@@ -85,7 +85,7 @@ function getDbConfig() {
 function getRounds() {
   const rounds = Number(process.env.AUTH_BCRYPT_ROUNDS || 12);
   if (!Number.isInteger(rounds) || rounds < 8 || rounds > 15) {
-    throw new Error("AUTH_BCRYPT_ROUNDS must be an integer in range 8..15");
+    throw new Error("AUTH_BCRYPT_ROUNDS должен быть целым числом в диапазоне 8..15");
   }
   return rounds;
 }
@@ -93,10 +93,10 @@ function getRounds() {
 function normalizeUsername(value) {
   const username = String(value || "").trim();
   if (!username) {
-    throw new Error("Username is required");
+    throw new Error("Нужно указать имя пользователя");
   }
   if (username.length > 100) {
-    throw new Error("Username is too long (max 100 chars)");
+    throw new Error("Имя пользователя слишком длинное (максимум 100 символов)");
   }
   return username;
 }
@@ -104,17 +104,17 @@ function normalizeUsername(value) {
 function normalizePassword(value) {
   const password = String(value || "");
   if (!password) {
-    throw new Error("Password is required");
+    throw new Error("Нужно указать пароль");
   }
   if (password.length < 8) {
-    throw new Error("Password must contain at least 8 characters");
+    throw new Error("Пароль должен содержать минимум 8 символов");
   }
   return password;
 }
 
 function usage() {
   return `
-Usage:
+Использование:
   npm run auth:init-table
   npm run auth:create-user -- <username> <password>
   npm run auth:reset-password -- <username> <password>
@@ -135,7 +135,7 @@ async function initTable(connection, tableName) {
     `
   );
 
-  console.log(`Table ready: ${tableName}`);
+  console.log(`Таблица готова: ${tableName}`);
 }
 
 async function createUser(connection, tableName, username, password) {
@@ -147,7 +147,7 @@ async function createUser(connection, tableName, username, password) {
     `,
     [username, hash]
   );
-  console.log(`User created: ${username}`);
+  console.log(`Пользователь создан: ${username}`);
 }
 
 async function resetPassword(connection, tableName, username, password) {
@@ -163,10 +163,10 @@ async function resetPassword(connection, tableName, username, password) {
   );
 
   if (result.affectedRows === 0) {
-    throw new Error(`User not found: ${username}`);
+    throw new Error(`Пользователь не найден: ${username}`);
   }
 
-  console.log(`Password updated: ${username}`);
+  console.log(`Пароль обновлен: ${username}`);
 }
 
 async function disableUser(connection, tableName, username) {
@@ -181,10 +181,10 @@ async function disableUser(connection, tableName, username) {
   );
 
   if (result.affectedRows === 0) {
-    throw new Error(`User not found: ${username}`);
+    throw new Error(`Пользователь не найден: ${username}`);
   }
 
-  console.log(`User disabled: ${username}`);
+  console.log(`Пользователь отключен: ${username}`);
 }
 
 async function main() {
@@ -232,10 +232,10 @@ async function main() {
       return;
     }
 
-    throw new Error(`Unknown command: ${command}`);
+    throw new Error(`Неизвестная команда: ${command}`);
   } catch (error) {
     if (error?.code === "ER_DUP_ENTRY") {
-      throw new Error(`User already exists: ${arg1}`);
+      throw new Error(`Пользователь уже существует: ${arg1}`);
     }
     throw error;
   } finally {
@@ -244,7 +244,7 @@ async function main() {
 }
 
 main().catch((error) => {
-  console.error(`Error: ${error.message}`);
+  console.error(`Ошибка: ${error.message}`);
   console.log(usage().trim());
   process.exitCode = 1;
 });
