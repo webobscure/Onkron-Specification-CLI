@@ -6,6 +6,8 @@ const { runTask, getRunPlan } = require("../dist/cli");
 const {
   listTransferProducts,
   getTransferProductSpecifications,
+  getEditableProductSpecifications,
+  saveEditableProductSpecifications,
   transferSelectedProductSpecifications,
 } = require("../dist/lib/transfer");
 const { sendBitrixChangeLog } = require("../dist/lib/bitrixLogger");
@@ -260,6 +262,72 @@ ipcMain.handle("spec:transfer:get-product-specs", async (_event, payload) => {
     ),
     productId: normalizedProductId,
   });
+});
+
+ipcMain.handle("spec:editor:get-product-specs", async (_event, payload) => {
+  ensureAuthenticated();
+
+  const {
+    productId,
+    languageId,
+  } = payload || {};
+
+  const normalizedProductId = Number(productId);
+  const normalizedLanguageId = Number(languageId);
+  if (!Number.isInteger(normalizedProductId) || normalizedProductId < 1) {
+    throw new Error("Нужен корректный productId");
+  }
+  if (!Number.isInteger(normalizedLanguageId) || normalizedLanguageId < 1) {
+    throw new Error("Нужен корректный languageId");
+  }
+
+  return getEditableProductSpecifications({
+    sourceLanguageId: normalizeLanguageInput(
+      TRANSFER_SOURCE_LANGUAGE_ID,
+      1
+    ),
+    languageId: normalizedLanguageId,
+    productId: normalizedProductId,
+  });
+});
+
+ipcMain.handle("spec:editor:save-product-specs", async (_event, payload) => {
+  ensureAuthenticated();
+
+  const {
+    productId,
+    languageId,
+    specs = [],
+  } = payload || {};
+
+  const normalizedProductId = Number(productId);
+  const normalizedLanguageId = Number(languageId);
+  if (!Number.isInteger(normalizedProductId) || normalizedProductId < 1) {
+    throw new Error("Нужен корректный productId");
+  }
+  if (!Number.isInteger(normalizedLanguageId) || normalizedLanguageId < 1) {
+    throw new Error("Нужен корректный languageId");
+  }
+
+  const result = await saveEditableProductSpecifications({
+    productId: normalizedProductId,
+    languageId: normalizedLanguageId,
+    specs: Array.isArray(specs) ? specs : [],
+  });
+
+  void sendBitrixChangeLog({
+    channel: "gui-edit",
+    task: "edit-product-specifications",
+    dryRun: false,
+    user: sessionUser?.username || "локально",
+    targetLanguageId: normalizedLanguageId,
+    productId: result.productId,
+    productName: result.productName,
+    specIds: result.specIds,
+    stats: [result],
+  });
+
+  return result;
 });
 
 ipcMain.handle("spec:transfer:submit", async (_event, payload) => {

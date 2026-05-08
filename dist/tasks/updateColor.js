@@ -1,4 +1,4 @@
-const { COLOR_TRANSLATIONS_EN, SPEC_IDS } = require("../config/specs");
+const { COLOR_TRANSLATIONS, SPEC_IDS } = require("../config/specs");
 const { runMultiValueSpecificationUpdate } = require("../lib/multiValueRunner");
 
 async function updateColor({
@@ -7,6 +7,11 @@ async function updateColor({
   dryRun = false,
   onProgress = null,
 }) {
+  const dictionary = COLOR_TRANSLATIONS[targetLanguageId];
+  if (!dictionary) {
+    throw new Error(`Нет словаря цветов для language_id=${targetLanguageId}`);
+  }
+
   return runMultiValueSpecificationUpdate({
     taskName: "update-color",
     sourceLanguageId,
@@ -16,7 +21,7 @@ async function updateColor({
     onProgress,
     allowUpdateIfTargetEqualsSource: true,
     allowUpdateIfTargetSubsetOfTransformed: true,
-    transformValue: (value) => COLOR_TRANSLATIONS_EN[value] || null,
+    transformValue: (value) => dictionary[value] || null,
   });
 }
 

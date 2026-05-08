@@ -139,14 +139,14 @@
           Продукт не выбран.
         </p>
 
-        <div class="transfer-selection-tools">
+        <div id="transferSelectionTools" class="transfer-selection-tools hidden">
           <button id="openTransferSpecsModal" class="ghost" disabled>Выбрать пункты</button>
           <span id="transferSelectionSummary" class="transfer-selection-summary">
             Выбрано пунктов: 0
           </span>
         </div>
 
-        <div class="transfer-actions">
+        <div id="transferActions" class="transfer-actions hidden">
           <button id="submitTransfer" class="task-card accent transfer-submit">
             <strong>Отправить</strong>
             <span>Перенести отмеченные пункты</span>
@@ -179,7 +179,7 @@
     </main>
 
     <div id="transferSpecsModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="transferSpecsModalTitle">
-      <div class="modal-card">
+      <div class="modal-card modal-card-transfer">
         <div class="modal-header">
           <h3 id="transferSpecsModalTitle">Выбор пунктов спецификации</h3>
           <button id="closeTransferSpecsModal" class="ghost" type="button">Закрыть</button>
@@ -199,6 +199,71 @@
           </span>
         </div>
         <div id="transferSpecs" class="transfer-specs"></div>
+        <div class="editor-actions">
+          <button id="submitTransferModal" class="task-card accent transfer-submit" type="button">
+            <strong>Перенести отмеченные пункты</strong>
+            <span>Записать выбранные значения в целевые языки</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div id="productActionModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="productActionModalTitle">
+      <div class="modal-card modal-card-action">
+        <div class="modal-header">
+          <div>
+            <h3 id="productActionModalTitle">Выберите действие</h3>
+            <p id="productActionMeta" class="modal-subtitle">Продукт не выбран.</p>
+          </div>
+          <button id="closeProductActionModal" class="ghost" type="button">Закрыть</button>
+        </div>
+        <div class="product-action-copy">
+          <strong>Что сделать с выбранным товаром?</strong>
+          <span>Откройте перенос в другие языки или редактор значений для конкретного языка.</span>
+        </div>
+        <div class="product-action-buttons">
+          <button id="chooseTransferMode" class="task-card" type="button">
+            <strong>Перенести</strong>
+            <span>Работает как текущий перенос по выбранным пунктам</span>
+          </button>
+          <button id="chooseEditMode" class="task-card" type="button">
+            <strong>Изменить / внести</strong>
+            <span>Открыть редактор значений для выбранного языка</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div id="editorModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="editorModalTitle">
+      <div class="modal-card modal-card-editor">
+        <div class="modal-header">
+          <div>
+            <h3 id="editorModalTitle">Изменение спецификаций</h3>
+            <p id="editorProductMeta" class="modal-subtitle">Продукт не выбран.</p>
+          </div>
+          <button id="closeEditorModal" class="ghost" type="button">Закрыть</button>
+        </div>
+        <div class="editor-toolbar">
+          <label class="editor-language">
+            Язык для редактирования
+            <select id="editorLanguageId"></select>
+          </label>
+          <label class="modal-search editor-search">
+            Поиск по ID / названию / значению
+            <input id="editorSpecsSearch" type="text" placeholder="например 24, VESA, гарантия" />
+          </label>
+        </div>
+        <div class="editor-status-row">
+          <span id="editorDirtySummary" class="transfer-selection-summary">Изменено пунктов: 0</span>
+          <span id="editorReferenceHint" class="editor-reference-hint">Источник для сравнения: language_id = 1</span>
+        </div>
+        <div id="editorSpecs" class="transfer-specs"></div>
+        <div class="editor-actions">
+          <button id="saveEditorSpecs" class="task-card accent transfer-submit" type="button">
+            <strong>Сохранить изменения</strong>
+            <span>Записать только измененные пункты</span>
+          </button>
+        </div>
       </div>
     </div>
 

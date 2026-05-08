@@ -11,6 +11,10 @@ contextBridge.exposeInMainWorld("specApi", {
     ipcRenderer.invoke("spec:transfer:list-products", payload),
   getTransferProductSpecs: (payload) =>
     ipcRenderer.invoke("spec:transfer:get-product-specs", payload),
+  getEditableProductSpecs: (payload) =>
+    ipcRenderer.invoke("spec:editor:get-product-specs", payload),
+  saveEditableProductSpecs: (payload) =>
+    ipcRenderer.invoke("spec:editor:save-product-specs", payload),
   submitTransfer: (payload) => ipcRenderer.invoke("spec:transfer:submit", payload),
   onProgressPlan: (handler) => {
     if (typeof handler !== "function") {

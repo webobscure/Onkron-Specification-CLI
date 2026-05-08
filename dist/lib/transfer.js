@@ -8,8 +8,12 @@ const {
   LOAD_SPEC_IDS,
   HEIGHT_SPEC_IDS,
   MATERIAL_TRANSLATIONS,
-  COLOR_TRANSLATIONS_EN,
+  COLOR_TRANSLATIONS,
+  COLOR_OPTION_VALUES,
+  MATERIAL_OPTION_VALUES,
   SPEC_IDS,
+  VESA_OPTION_VALUES,
+  SCREEN_COUNT_OPTION_VALUES,
 } = require("../config/specs");
 const { withDbConnection, upsertSpecification, replaceSpecificationValues } = require("./db");
 const {
@@ -67,10 +71,15 @@ const MM_TO_INCH_SPEC_ID_SET = new Set([
 ]);
 const DIMENSION_SPEC_ID_SET = new Set([68, 760, 762]);
 const M3_TO_FT3_SPEC_ID_SET = new Set([...EXTRA_VOLUME_SPEC_ID_SET]);
-const MULTI_VALUE_SPEC_ID_SET = new Set([SPEC_IDS.color, SPEC_IDS.material]);
+const MULTI_VALUE_SPEC_ID_SET = new Set([
+  SPEC_IDS.vesa || 24,
+  SPEC_IDS.color,
+  SPEC_IDS.material,
+]);
 
 function translateColorValue(value, { sourceLanguageId, targetLanguageId }) {
-  if (targetLanguageId !== US_LANGUAGE_ID) {
+  const targetDictionary = COLOR_TRANSLATIONS[targetLanguageId];
+  if (!targetDictionary) {
     return value;
   }
 
@@ -78,7 +87,7 @@ function translateColorValue(value, { sourceLanguageId, targetLanguageId }) {
     return value;
   }
 
-  return COLOR_TRANSLATIONS_EN[value] || null;
+  return targetDictionary[value] || null;
 }
 
 function translateMaterialValue(value, { sourceLanguageId, targetLanguageId }) {
@@ -135,6 +144,249 @@ function getSpecGroupMeta(specificationId) {
     groupLabel,
     groupOrder,
   };
+}
+
+function isMultiValueSpecId(specificationId) {
+  return MULTI_VALUE_SPEC_ID_SET.has(Number(specificationId));
+}
+
+function normalizeValueArray(values) {
+  if (!Array.isArray(values)) {
+    return [];
+  }
+
+  const unique = [];
+  for (const rawValue of values) {
+    const value = rawValue === null || rawValue === undefined
+      ? ""
+      : String(rawValue).trim();
+    if (!value || unique.includes(value)) {
+      continue;
+    }
+    unique.push(value);
+  }
+
+  return unique;
+}
+
+function mergeValueArrays(...lists) {
+  const merged = [];
+  for (const list of lists) {
+    for (const value of normalizeValueArray(list)) {
+      if (!merged.includes(value)) {
+        merged.push(value);
+      }
+    }
+  }
+  return merged;
+}
+
+function normalizeOptionEntries(options) {
+  const unique = [];
+  for (const option of Array.isArray(options) ? options : []) {
+    const value = String(option?.value || "").trim();
+    const label = String(option?.label || value).trim();
+    if (!value || unique.some((item) => item.value === value)) {
+      continue;
+    }
+    unique.push({ value, label });
+  }
+  return unique;
+}
+
+async function fetchProductSpecificationEntries(connection, {
+  languageId,
+  productId,
+  specIds,
+}) {
+  const normalizedLanguageId = normalizeInt(languageId, { name: "language id" });
+  const normalizedProductId = normalizeInt(productId, { name: "product id" });
+  const ids = normalizeSpecIds(specIds);
+  const multiValueSpecIds = ids.filter((id) => isMultiValueSpecId(id));
+  const singleValueSpecIds = ids.filter((id) => !isMultiValueSpecId(id));
+  const entriesBySpecId = new Map();
+
+  if (singleValueSpecIds.length > 0) {
+    const [rows] = await connection.execute(
+      `
+        SELECT
+          ps.specifications_id,
+          ps.specification
+        FROM products_specifications ps
+        INNER JOIN (
+          SELECT
+            specifications_id,
+            MAX(products_specification_id) AS max_id
+          FROM products_specifications
+          WHERE language_id = ?
+            AND products_id = ?
+            AND specifications_id IN (${singleValueSpecIds.map(() => "?").join(", ")})
+          GROUP BY specifications_id
+        ) latest
+          ON latest.max_id = ps.products_specification_id
+        ORDER BY specifications_id
+      `,
+      [normalizedLanguageId, normalizedProductId, ...singleValueSpecIds]
+    );
+
+    for (const row of rows) {
+      const specificationId = Number(row.specifications_id);
+      const value = row.specification === null || row.specification === undefined
+        ? ""
+        : String(row.specification).trim();
+      entriesBySpecId.set(specificationId, normalizeValueArray([value]));
+    }
+  }
+
+  if (multiValueSpecIds.length > 0) {
+    const [rows] = await connection.execute(
+      `
+        SELECT
+          ps.specifications_id,
+          ps.specification
+        FROM products_specifications ps
+        INNER JOIN (
+          SELECT
+            specifications_id,
+            specification,
+            MAX(products_specification_id) AS max_id
+          FROM products_specifications
+          WHERE language_id = ?
+            AND products_id = ?
+            AND specifications_id IN (${multiValueSpecIds.map(() => "?").join(", ")})
+          GROUP BY specifications_id, specification
+        ) latest
+          ON latest.max_id = ps.products_specification_id
+        ORDER BY ps.specifications_id, ps.products_specification_id DESC
+      `,
+      [normalizedLanguageId, normalizedProductId, ...multiValueSpecIds]
+    );
+
+    for (const row of rows) {
+      const specificationId = Number(row.specifications_id);
+      const currentValues = entriesBySpecId.get(specificationId) || [];
+      const mergedValues = mergeValueArrays(currentValues, [row.specification]);
+      entriesBySpecId.set(specificationId, mergedValues);
+    }
+  }
+
+  const entries = [];
+  for (const specificationId of ids) {
+    if (!entriesBySpecId.has(specificationId)) {
+      continue;
+    }
+
+    const values = normalizeValueArray(entriesBySpecId.get(specificationId));
+    const groupMeta = getSpecGroupMeta(specificationId);
+
+    entries.push({
+      specificationId,
+      label: getSpecLabel(specificationId),
+      values,
+      value: values.join(", "),
+      isMultiValue: isMultiValueSpecId(specificationId),
+      ...groupMeta,
+    });
+  }
+
+  entries.sort((a, b) => {
+    if (a.groupOrder !== b.groupOrder) {
+      return a.groupOrder - b.groupOrder;
+    }
+
+    return a.specificationId - b.specificationId;
+  });
+
+  return entries;
+}
+
+function getEditorFieldType(specificationId) {
+  if (Number(specificationId) === 753) {
+    return "choice";
+  }
+
+  return isMultiValueSpecId(specificationId) ? "multi" : "text";
+}
+
+function buildEditableOptions({
+  specificationId,
+  sourceValues,
+  currentValues,
+  targetLanguageId,
+}) {
+  const merged = mergeValueArrays(sourceValues, currentValues);
+
+  if (specificationId === SPEC_IDS.color) {
+    if (targetLanguageId === 1) {
+      return normalizeOptionEntries(
+        mergeValueArrays(COLOR_OPTION_VALUES, merged).map((value) => ({
+          value,
+          label: value,
+        }))
+      );
+    }
+
+    const dictionary = COLOR_TRANSLATIONS[targetLanguageId] || null;
+    const translatedBaseOptions = COLOR_OPTION_VALUES.map((value) => ({
+      value: dictionary?.[value] || value,
+      label: dictionary?.[value] || value,
+    }));
+    const currentTranslatedOptions = currentValues.map((value) => ({
+      value,
+      label: value,
+    }));
+    return normalizeOptionEntries([
+      ...translatedBaseOptions,
+      ...currentTranslatedOptions,
+    ]);
+  }
+
+  if (specificationId === SPEC_IDS.material) {
+    if (targetLanguageId === 1) {
+      return normalizeOptionEntries(
+        mergeValueArrays(MATERIAL_OPTION_VALUES, merged).map((value) => ({
+          value,
+          label: value,
+        }))
+      );
+    }
+
+    const dictionary = MATERIAL_TRANSLATIONS[targetLanguageId] || null;
+    const translatedBaseOptions = MATERIAL_OPTION_VALUES.map((value) => ({
+      value: dictionary?.[value] || value,
+      label: dictionary?.[value] || value,
+    }));
+    const currentTranslatedOptions = currentValues.map((value) => ({
+      value,
+      label: value,
+    }));
+    return normalizeOptionEntries([
+      ...translatedBaseOptions,
+      ...currentTranslatedOptions,
+    ]);
+  }
+
+  if (Number(specificationId) === Number(SPEC_IDS.vesa || 24)) {
+    return normalizeOptionEntries(
+      mergeValueArrays(VESA_OPTION_VALUES, merged).map((value) => ({
+        value,
+        label: value,
+      }))
+    );
+  }
+
+  if (Number(specificationId) === 753) {
+    return normalizeOptionEntries(
+      mergeValueArrays(SCREEN_COUNT_OPTION_VALUES, merged).map((value) => ({
+        value,
+        label: value,
+      }))
+    );
+  }
+
+  return normalizeOptionEntries(
+    merged.map((value) => ({ value, label: value }))
+  );
 }
 
 function resolveTargetLanguageIds(sourceLanguageId, targetLanguageId) {
@@ -537,41 +789,87 @@ async function getTransferProductSpecifications({
   const ids = normalizeSpecIds(specIds);
 
   return withDbConnection(async (connection) => {
-    const [rows] = await connection.execute(
-      `
-        SELECT
-          ps.specifications_id,
-          ps.specification
-        FROM products_specifications ps
-        INNER JOIN (
-          SELECT
-            specifications_id,
-            MAX(products_specification_id) AS max_id
-          FROM products_specifications
-          WHERE language_id = ?
-            AND products_id = ?
-            AND specifications_id IN (${ids.map(() => "?").join(", ")})
-          GROUP BY specifications_id
-        ) latest
-          ON latest.max_id = ps.products_specification_id
-        ORDER BY specifications_id
-      `,
-      [langId, normalizedProductId, ...ids]
+    return fetchProductSpecificationEntries(connection, {
+      languageId: langId,
+      productId: normalizedProductId,
+      specIds: ids,
+    });
+  });
+}
+
+async function getEditableProductSpecifications({
+  sourceLanguageId = 1,
+  languageId,
+  productId,
+  specIds = TRANSFER_SPEC_IDS,
+}) {
+  const normalizedSourceLanguageId = normalizeInt(sourceLanguageId, {
+    name: "source language id",
+  });
+  const normalizedLanguageId = normalizeInt(languageId, { name: "language id" });
+  const normalizedProductId = normalizeInt(productId, { name: "product id" });
+  const ids = normalizeSpecIds(specIds);
+
+  return withDbConnection(async (connection) => {
+    const [productMeta, sourceEntries, currentEntries] = await Promise.all([
+      fetchTransferProductMeta(connection, {
+        productId: normalizedProductId,
+        languageId: normalizedSourceLanguageId,
+      }),
+      fetchProductSpecificationEntries(connection, {
+        languageId: normalizedSourceLanguageId,
+        productId: normalizedProductId,
+        specIds: ids,
+      }),
+      fetchProductSpecificationEntries(connection, {
+        languageId: normalizedLanguageId,
+        productId: normalizedProductId,
+        specIds: ids,
+      }),
+    ]);
+
+    const sourceBySpecId = new Map(
+      sourceEntries.map((entry) => [Number(entry.specificationId), entry])
+    );
+    const currentBySpecId = new Map(
+      currentEntries.map((entry) => [Number(entry.specificationId), entry])
+    );
+    const combinedSpecIds = ids.filter(
+      (specificationId) =>
+        sourceBySpecId.has(specificationId) || currentBySpecId.has(specificationId)
     );
 
-    const mapped = rows.map((row) => {
-      const specificationId = Number(row.specifications_id);
+    const specifications = combinedSpecIds.map((specificationId) => {
+      const sourceEntry = sourceBySpecId.get(specificationId) || null;
+      const currentEntry = currentBySpecId.get(specificationId) || null;
       const groupMeta = getSpecGroupMeta(specificationId);
+      const sourceValues = normalizeValueArray(sourceEntry?.values || []);
+      const currentValues = normalizeValueArray(currentEntry?.values || []);
+      const fieldType = getEditorFieldType(specificationId);
 
       return {
         specificationId,
         label: getSpecLabel(specificationId),
-        value: row.specification,
+        fieldType,
+        isMultiValue: fieldType === "multi",
+        value: currentValues[0] || "",
+        values: currentValues,
+        sourceValue: sourceValues[0] || "",
+        sourceValues,
+        options:
+          fieldType !== "text"
+            ? buildEditableOptions({
+                specificationId,
+                sourceValues,
+                currentValues,
+                targetLanguageId: normalizedLanguageId,
+              })
+            : [],
         ...groupMeta,
       };
     });
 
-    mapped.sort((a, b) => {
+    specifications.sort((a, b) => {
       if (a.groupOrder !== b.groupOrder) {
         return a.groupOrder - b.groupOrder;
       }
@@ -579,7 +877,86 @@ async function getTransferProductSpecifications({
       return a.specificationId - b.specificationId;
     });
 
-    return mapped;
+    return {
+      productId: normalizedProductId,
+      languageId: normalizedLanguageId,
+      sourceLanguageId: normalizedSourceLanguageId,
+      productName: productMeta.productName,
+      productModel: productMeta.productModel,
+      productImageUrl: productMeta.productImageUrl,
+      productStatus: productMeta.productStatus,
+      specifications,
+    };
+  });
+}
+
+async function saveEditableProductSpecifications({
+  productId,
+  languageId,
+  specs = [],
+}) {
+  const normalizedProductId = normalizeInt(productId, { name: "product id" });
+  const normalizedLanguageId = normalizeInt(languageId, { name: "language id" });
+  const normalizedSpecs = Array.isArray(specs) ? specs : [];
+
+  if (normalizedSpecs.length === 0) {
+    return {
+      taskName: "edit-product-specifications",
+      productId: normalizedProductId,
+      languageId: normalizedLanguageId,
+      total: 0,
+      updated: 0,
+      failed: 0,
+      specIds: [],
+    };
+  }
+
+  return withDbConnection(async (connection) => {
+    const productMeta = await fetchTransferProductMeta(connection, {
+      productId: normalizedProductId,
+      languageId: 1,
+    });
+
+    const stats = {
+      taskName: "edit-product-specifications",
+      productId: normalizedProductId,
+      productName: productMeta.productName,
+      languageId: normalizedLanguageId,
+      total: normalizedSpecs.length,
+      updated: 0,
+      failed: 0,
+      specIds: [],
+    };
+
+    await connection.beginTransaction();
+
+    try {
+      for (const spec of normalizedSpecs) {
+        const specificationId = normalizeInt(spec?.specificationId, {
+          name: "specification id",
+        });
+        const values = isMultiValueSpecId(specificationId)
+          ? normalizeValueArray(spec?.values || [])
+          : normalizeValueArray([spec?.value || ""]);
+
+        await replaceSpecificationValues(connection, {
+          productId: normalizedProductId,
+          languageId: normalizedLanguageId,
+          specificationId,
+          values,
+        });
+
+        stats.updated += 1;
+        stats.specIds.push(specificationId);
+      }
+
+      await connection.commit();
+      return stats;
+    } catch (error) {
+      await connection.rollback();
+      stats.failed = normalizedSpecs.length;
+      throw error;
+    }
   });
 }
 
@@ -812,5 +1189,7 @@ module.exports = {
   ALL_TARGETS,
   listTransferProducts,
   getTransferProductSpecifications,
+  getEditableProductSpecifications,
+  saveEditableProductSpecifications,
   transferSelectedProductSpecifications,
 };

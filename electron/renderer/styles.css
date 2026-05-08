@@ -33,6 +33,10 @@ body {
   overflow-y: auto;
 }
 
+.hidden {
+  display: none !important;
+}
+
 .noise {
   position: fixed;
   inset: 0;
@@ -368,6 +372,35 @@ select {
   margin: 0;
   color: var(--muted);
   font-weight: 600;
+}
+
+.product-action-chooser {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: linear-gradient(180deg, #fffdf7, #f8f2e8);
+}
+
+.product-action-copy {
+  display: grid;
+  gap: 4px;
+}
+
+.product-action-copy strong {
+  font-size: 15px;
+}
+
+.product-action-copy span {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.product-action-buttons {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
 }
 
 .transfer-note {
@@ -757,6 +790,20 @@ pre.error {
   padding: 16px;
 }
 
+.modal-card-transfer {
+  grid-template-rows: auto auto auto auto minmax(0, 1fr) auto;
+}
+
+.modal-card-editor {
+  width: min(1100px, 100%);
+  grid-template-rows: auto auto auto minmax(0, 1fr) auto;
+}
+
+.modal-card-action {
+  width: min(840px, 100%);
+  grid-template-rows: auto auto auto;
+}
+
 .modal-header {
   display: flex;
   align-items: center;
@@ -784,6 +831,93 @@ pre.error {
   align-items: center;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+.editor-toolbar {
+  display: grid;
+  grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
+  gap: 12px;
+  align-items: end;
+}
+
+.editor-language {
+  max-width: 280px;
+}
+
+.editor-search {
+  min-width: 0;
+}
+
+.editor-status-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.editor-reference-hint {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.editor-actions {
+  display: flex;
+}
+
+.editor-spec-input,
+.editor-spec-textarea {
+  width: 100%;
+  background: #fffdf7;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px 12px;
+  color: var(--ink);
+}
+
+.editor-spec-textarea {
+  min-height: 92px;
+  resize: vertical;
+}
+
+.editor-spec-reference {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.editor-spec-reference strong {
+  color: var(--ink);
+}
+
+.editor-spec-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 8px;
+}
+
+.editor-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fffdf7;
+  font-size: 13px;
+  color: var(--ink);
+}
+
+.editor-option input {
+  margin-top: 2px;
+}
+
+.editor-field-changed {
+  border-color: rgba(202, 58, 33, 0.45);
+  box-shadow: inset 0 0 0 1px rgba(202, 58, 33, 0.14);
+  background: linear-gradient(180deg, #fffaf4, #fff4eb);
 }
 
 @keyframes boot {
@@ -873,6 +1007,10 @@ pre.error {
     width: 100%;
     padding: 12px;
     border-radius: 12px;
+  }
+
+  .editor-toolbar {
+    grid-template-columns: 1fr;
   }
 
   .modal-header {
