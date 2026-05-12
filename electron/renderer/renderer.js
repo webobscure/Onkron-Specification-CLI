@@ -73,6 +73,7 @@ let editorInitialEntries = [];
 let editorSpecsSearchQuery = "";
 let editorLanguageOptions = [];
 let activeEditorLanguageId = null;
+let editorDraftsByLanguage = new Map();
 let plannedTaskStageTotal = 0;
 let authState = {
   required: true,
@@ -176,6 +177,73 @@ function isEditorEntryChanged(entry) {
 
 function getChangedEditorEntries() {
   return editorEntries.filter((entry) => isEditorEntryChanged(entry));
+}
+
+function cloneEditorEntry(entry) {
+  return {
+    ...entry,
+    values: Array.isArray(entry?.values) ? [...entry.values] : [],
+    sourceValues: Array.isArray(entry?.sourceValues) ? [...entry.sourceValues] : [],
+    options: Array.isArray(entry?.options) ? [...entry.options] : [],
+  };
+}
+
+function cloneEditorEntries(entries) {
+  return Array.isArray(entries) ? entries.map((entry) => cloneEditorEntry(entry)) : [];
+}
+
+function getChangedEntriesForDraft(draft) {
+  const entries = Array.isArray(draft?.entries) ? draft.entries : [];
+  const initialEntries = Array.isArray(draft?.initialEntries) ? draft.initialEntries : [];
+
+  return entries.filter((entry) => {
+    const initialEntry = initialEntries.find(
+      (candidate) => Number(candidate.specificationId) === Number(entry.specificationId)
+    );
+    if (!initialEntry) {
+      return false;
+    }
+
+    if (entry.fieldType === "multi") {
+      return !areArraysEqual(
+        normalizeEntryValues(entry),
+        normalizeEntryValues(initialEntry)
+      );
+    }
+
+    return normalizeEntryValue(entry) !== normalizeEntryValue(initialEntry);
+  });
+}
+
+function countEditorDraftChanges() {
+  let languageCount = 0;
+  let itemCount = 0;
+
+  for (const draft of editorDraftsByLanguage.values()) {
+    const changedEntries = getChangedEntriesForDraft(draft);
+    if (changedEntries.length === 0) {
+      continue;
+    }
+    languageCount += 1;
+    itemCount += changedEntries.length;
+  }
+
+  return { languageCount, itemCount };
+}
+
+function storeCurrentEditorDraft() {
+  if (!activeEditorLanguageId) {
+    return;
+  }
+
+  if (editorEntries.length === 0 && editorInitialEntries.length === 0) {
+    return;
+  }
+
+  editorDraftsByLanguage.set(Number(activeEditorLanguageId), {
+    entries: cloneEditorEntries(editorEntries),
+    initialEntries: cloneEditorEntries(editorInitialEntries),
+  });
 }
 
 function syncRequestIndicators() {
@@ -301,8 +369,12 @@ function updateTransferSelectionSummary() {
 }
 
 function updateEditorDirtySummary() {
+  storeCurrentEditorDraft();
   const changedCount = getChangedEditorEntries().length;
-  editorDirtySummaryEl.textContent = `Изменено пунктов: ${changedCount}`;
+  const draftCounts = countEditorDraftChanges();
+  editorDirtySummaryEl.textContent =
+    `Текущий язык: ${changedCount} · Всего: ${draftCounts.itemCount} ` +
+    `в ${draftCounts.languageCount} языках`;
 }
 
 function setSelectedProductActionMode(nextMode) {
@@ -465,9 +537,6 @@ function renderTransferProducts(products) {
       button.classList.add("active");
     }
     button.addEventListener("click", () => {
-      if (selectedTransferProductId !== productId && !confirmEditorDraftLoss()) {
-        return;
-      }
       selectTransferProduct(productId).catch((error) => {
         outputEl.classList.add("error");
         appendOutput(`ОШИБКА: ${error.message}`, true);
@@ -653,6 +722,7 @@ function createEditorSpecItem(entry) {
           nextValues.delete(option.value);
         }
         entry.values = [...nextValues];
+        storeCurrentEditorDraft();
         renderEditorSpecs();
         refreshActionButtons();
       });
@@ -683,6 +753,7 @@ function createEditorSpecItem(entry) {
           return;
         }
         entry.value = String(option.value || "");
+        storeCurrentEditorDraft();
         renderEditorSpecs();
         refreshActionButtons();
       });
@@ -710,6 +781,7 @@ function createEditorSpecItem(entry) {
     input.value = entry.value || "";
     input.addEventListener("input", () => {
       entry.value = input.value;
+      storeCurrentEditorDraft();
       updateEditorDirtySummary();
       item.classList.toggle("editor-field-changed", isEditorEntryChanged(entry));
       refreshActionButtons();
@@ -828,7 +900,7 @@ function refreshActionButtons() {
     shouldDisable ||
     !selectedTransferProductId ||
     !activeEditorLanguageId ||
-    getChangedEditorEntries().length === 0;
+    countEditorDraftChanges().itemCount === 0;
   saveEditorSpecsEl.style.opacity = saveEditorSpecsEl.disabled ? "0.65" : "1";
 
   const selectedSpecIds = getSelectedTransferSpecIds();
@@ -993,6 +1065,7 @@ async function loadTransferProducts() {
   editorSpecsSearchQuery = "";
   editorSpecsSearchEl.value = "";
   activeEditorLanguageId = null;
+  editorDraftsByLanguage = new Map();
   setSelectedProductActionMode(null);
   transferSelectedProductEl.textContent = "Продукт не выбран.";
   productActionMetaEl.textContent = "Продукт не выбран.";
@@ -1038,7 +1111,8 @@ async function selectTransferProduct(productId) {
   editorInitialEntries = [];
   editorSpecsSearchQuery = "";
   editorSpecsSearchEl.value = "";
-  activeEditorLanguageId = Number(editorLanguageIdEl.value || targetLanguageIdEl.value || 2) || 2;
+  activeEditorLanguageId = null;
+  editorDraftsByLanguage = new Map();
   editorProductMetaEl.textContent = getProductSummaryText(selectedTransferProductData);
   productActionMetaEl.textContent = getProductSummaryText(selectedTransferProductData);
   setSelectedProductActionMode(null);
@@ -1073,7 +1147,11 @@ async function loadTransferSpecsForSelectedProduct() {
   openTransferSpecsModal();
 }
 
-async function loadEditorSpecsForSelectedProduct({ languageId, preserveDraft = false } = {}) {
+async function loadEditorSpecsForSelectedProduct({
+  languageId,
+  preserveDraft = false,
+  skipStoreDraft = false,
+} = {}) {
   if (!selectedTransferProductId) {
     appendOutput("ОШИБКА: Сначала выберите продукт.", true);
     return;
@@ -1081,6 +1159,26 @@ async function loadEditorSpecsForSelectedProduct({ languageId, preserveDraft = f
 
   const nextLanguageId =
     Number(languageId || editorLanguageIdEl.value || targetLanguageIdEl.value || 2) || 2;
+  if (!skipStoreDraft) {
+    storeCurrentEditorDraft();
+  }
+
+  const existingDraft = editorDraftsByLanguage.get(nextLanguageId);
+  if (existingDraft) {
+    activeEditorLanguageId = nextLanguageId;
+    editorLanguageIdEl.value = String(nextLanguageId);
+    editorEntries = cloneEditorEntries(existingDraft.entries);
+    editorInitialEntries = cloneEditorEntries(existingDraft.initialEntries);
+    setSelectedProductActionMode("edit");
+    renderEditorSpecs();
+    refreshActionButtons();
+
+    if (!preserveDraft) {
+      openEditorModal();
+    }
+    return;
+  }
+
   const response = await withRequestLoader("Загружаем значения для редактирования...", () =>
     window.specApi.getEditableProductSpecs({
       productId: selectedTransferProductId,
@@ -1089,24 +1187,16 @@ async function loadEditorSpecsForSelectedProduct({ languageId, preserveDraft = f
     })
   );
 
-  const nextEntries = Array.isArray(response?.specifications)
-    ? response.specifications.map((entry) => ({
-        ...entry,
-        values: Array.isArray(entry.values) ? [...entry.values] : [],
-        sourceValues: Array.isArray(entry.sourceValues) ? [...entry.sourceValues] : [],
-        options: Array.isArray(entry.options) ? [...entry.options] : [],
-      }))
-    : [];
+  const nextEntries = cloneEditorEntries(response?.specifications || []);
 
   activeEditorLanguageId = nextLanguageId;
   editorLanguageIdEl.value = String(nextLanguageId);
   editorEntries = nextEntries;
-  editorInitialEntries = nextEntries.map((entry) => ({
-    ...entry,
-    values: Array.isArray(entry.values) ? [...entry.values] : [],
-    sourceValues: Array.isArray(entry.sourceValues) ? [...entry.sourceValues] : [],
-    options: Array.isArray(entry.options) ? [...entry.options] : [],
-  }));
+  editorInitialEntries = cloneEditorEntries(nextEntries);
+  editorDraftsByLanguage.set(nextLanguageId, {
+    entries: cloneEditorEntries(editorEntries),
+    initialEntries: cloneEditorEntries(editorInitialEntries),
+  });
   editorProductMetaEl.textContent = getProductSummaryText({
     id: response?.productId || selectedTransferProductId,
     productId: response?.productId || selectedTransferProductId,
@@ -1173,18 +1263,20 @@ async function submitTransferSelection() {
 }
 
 async function saveEditorSpecifications() {
-  if (!selectedTransferProductId || !activeEditorLanguageId) {
+  if (!selectedTransferProductId) {
     appendOutput("ОШИБКА: Сначала выберите продукт и язык.", true);
     return;
   }
 
-  const changedEntries = getChangedEditorEntries().map((entry) => ({
-    specificationId: Number(entry.specificationId),
-    value: normalizeEntryValue(entry),
-    values: normalizeEntryValues(entry),
-  }));
+  storeCurrentEditorDraft();
+  const draftsToSave = [...editorDraftsByLanguage.entries()]
+    .map(([languageId, draft]) => ({
+      languageId: Number(languageId),
+      changedEntries: getChangedEntriesForDraft(draft),
+    }))
+    .filter((draft) => draft.changedEntries.length > 0);
 
-  if (changedEntries.length === 0) {
+  if (draftsToSave.length === 0) {
     appendOutput("ОШИБКА: Нет измененных пунктов для сохранения.", true);
     return;
   }
@@ -1194,30 +1286,43 @@ async function saveEditorSpecifications() {
 
   try {
     appendOutput(
-      `>>> Редактирование товара #${selectedTransferProductId} · язык ${activeEditorLanguageId}`
+      `>>> Редактирование товара #${selectedTransferProductId} · языков: ${draftsToSave.length}`
     );
 
-    const result = await withRequestLoader("Сохраняем изменения...", () =>
-      window.specApi.saveEditableProductSpecs({
-        productId: selectedTransferProductId,
-        languageId: activeEditorLanguageId,
-        specs: changedEntries,
-      })
-    );
+    for (const draft of draftsToSave) {
+      const specs = draft.changedEntries.map((entry) => ({
+        specificationId: Number(entry.specificationId),
+        value: normalizeEntryValue(entry),
+        values: normalizeEntryValues(entry),
+      }));
 
-    appendOutput("------------------------------");
-    appendOutput(
-      [
-        `Задача: Редактирование спецификаций`,
-        `ID товара: ${result.productId}`,
-        `Язык: ${result.languageId}`,
-        `Изменено пунктов: ${result.updated}`,
-      ].join("\n")
-    );
+      const result = await withRequestLoader(
+        `Сохраняем изменения для языка ${draft.languageId}...`,
+        () =>
+          window.specApi.saveEditableProductSpecs({
+            productId: selectedTransferProductId,
+            languageId: draft.languageId,
+            specs,
+          })
+      );
+
+      appendOutput("------------------------------");
+      appendOutput(
+        [
+          `Задача: Редактирование спецификаций`,
+          `ID товара: ${result.productId}`,
+          `Язык: ${result.languageId}`,
+          `Изменено пунктов: ${result.updated}`,
+        ].join("\n")
+      );
+    }
+
+    editorDraftsByLanguage = new Map();
 
     await loadEditorSpecsForSelectedProduct({
       languageId: activeEditorLanguageId,
       preserveDraft: true,
+      skipStoreDraft: true,
     });
     appendOutput(`Завершено: ${new Date().toLocaleString()}`);
   } catch (error) {
@@ -1318,14 +1423,6 @@ async function handleLogout() {
   }
 }
 
-function confirmEditorDraftLoss() {
-  if (getChangedEditorEntries().length === 0) {
-    return true;
-  }
-
-  return window.confirm("Есть несохраненные изменения. Продолжить без сохранения?");
-}
-
 function bindEvents() {
   window.specApi.onProgressPlan((payload) => {
     plannedTaskStageTotal = Math.max(Number(payload?.stageTotal) || 0, 0);
@@ -1386,10 +1483,6 @@ function bindEvents() {
   });
 
   chooseEditModeEl.addEventListener("click", () => {
-    if (!confirmEditorDraftLoss()) {
-      return;
-    }
-
     loadEditorSpecsForSelectedProduct({
       languageId: Number(editorLanguageIdEl.value || targetLanguageIdEl.value || 2) || 2,
     }).catch((error) => {
@@ -1407,9 +1500,7 @@ function bindEvents() {
   });
 
   closeEditorModalEl.addEventListener("click", () => {
-    if (!confirmEditorDraftLoss()) {
-      return;
-    }
+    storeCurrentEditorDraft();
     closeEditorModal();
   });
 
@@ -1426,7 +1517,8 @@ function bindEvents() {
   });
 
   editorModalEl.addEventListener("click", (event) => {
-    if (event.target === editorModalEl && confirmEditorDraftLoss()) {
+    if (event.target === editorModalEl) {
+      storeCurrentEditorDraft();
       closeEditorModal();
     }
   });
@@ -1458,10 +1550,6 @@ function bindEvents() {
   editorLanguageIdEl.addEventListener("change", () => {
     const nextLanguageId = Number(editorLanguageIdEl.value || 0);
     if (!selectedTransferProductId || !nextLanguageId) {
-      return;
-    }
-    if (!confirmEditorDraftLoss()) {
-      editorLanguageIdEl.value = String(activeEditorLanguageId || nextLanguageId);
       return;
     }
 
@@ -1508,9 +1596,8 @@ function bindEvents() {
     }
 
     if (event.key === "Escape" && !editorModalEl.classList.contains("hidden")) {
-      if (confirmEditorDraftLoss()) {
-        closeEditorModal();
-      }
+      storeCurrentEditorDraft();
+      closeEditorModal();
     }
   });
 }
