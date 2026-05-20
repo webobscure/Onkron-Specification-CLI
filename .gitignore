@@ -2,6 +2,7 @@
 .env*
 !.env.signing.example
 electron/app-config.json
+release/
 dist/mac-arm64/
 *.log
 .DS_Store
