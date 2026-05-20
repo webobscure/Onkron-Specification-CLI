@@ -16,6 +16,7 @@
     "auth:init-table": "node ./scripts/auth-admin.js init-table",
     "auth:create-user": "node ./scripts/auth-admin.js create-user",
     "auth:reset-password": "node ./scripts/auth-admin.js reset-password",
+    "auth:set-role": "node ./scripts/auth-admin.js set-role",
     "auth:disable-user": "node ./scripts/auth-admin.js disable-user",
     "icons:build": "node ./scripts/generate-icons.js",
     "pack": "electron-builder --dir",

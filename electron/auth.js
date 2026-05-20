@@ -5,6 +5,7 @@ const dotenv = require("dotenv");
 dotenv.config();
 
 const failedAttempts = new Map();
+const ALLOWED_ROLES = new Set(["user", "advanced", "admin"]);
 
 function parseBoolean(value, fallback = false) {
   if (value === undefined || value === null || value === "") {
@@ -90,6 +91,11 @@ function getPasswordHashFromRow(row) {
   return row.password_hash || row.passwordHash || row.password || null;
 }
 
+function normalizeRole(value) {
+  const role = String(value || "user").trim().toLowerCase();
+  return ALLOWED_ROLES.has(role) ? role : "user";
+}
+
 function isUserActive(row) {
   if (row.is_active === undefined || row.is_active === null) {
     return true;
@@ -158,6 +164,7 @@ function toPublicUser(row) {
   return {
     id: Number(row.id),
     username: String(row.username),
+    role: normalizeRole(row.role),
   };
 }
 
@@ -166,15 +173,32 @@ async function fetchUserByUsername(username) {
   const tableName = getAuthTableName();
 
   try {
-    const [rows] = await connection.execute(
-      `
-        SELECT id, username, password_hash, is_active
-        FROM \`${tableName}\`
-        WHERE username = ?
-        LIMIT 1
-      `,
-      [username]
-    );
+    let rows;
+    try {
+      [rows] = await connection.execute(
+        `
+          SELECT id, username, password_hash, is_active, role
+          FROM \`${tableName}\`
+          WHERE username = ?
+          LIMIT 1
+        `,
+        [username]
+      );
+    } catch (error) {
+      if (error?.code !== "ER_BAD_FIELD_ERROR") {
+        throw error;
+      }
+
+      [rows] = await connection.execute(
+        `
+          SELECT id, username, password_hash, is_active
+          FROM \`${tableName}\`
+          WHERE username = ?
+          LIMIT 1
+        `,
+        [username]
+      );
+    }
 
     return rows[0] || null;
   } finally {

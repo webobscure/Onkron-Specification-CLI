@@ -60,8 +60,12 @@
         </p>
       </header>
 
-      <section class="panel settings" aria-label="Настройки">
+      <section id="advancedSettingsPanel" class="panel settings" aria-label="Настройки">
         <h2>Настройки запуска</h2>
+        <div id="advancedSettingsNotice" class="access-notice hidden">
+          <strong>Доступ ограничен</strong>
+          <span>Настройки массового запуска доступны только ролям advanced/admin.</span>
+        </div>
 
         <div class="form-grid">
           <label>
@@ -86,8 +90,12 @@
         </div>
       </section>
 
-      <section class="panel actions" aria-label="Действия">
+      <section id="advancedTasksPanel" class="panel actions" aria-label="Действия">
         <h2>Задачи спецификаций</h2>
+        <div id="advancedTasksNotice" class="access-notice hidden">
+          <strong>Доступ ограничен</strong>
+          <span>Массовые задачи спецификаций доступны только ролям advanced/admin.</span>
+        </div>
         <div class="cards">
           <button class="task-card" data-task="material">
             <strong>Материал</strong>

@@ -220,6 +220,31 @@ select {
   gap: 10px;
 }
 
+.access-notice {
+  display: grid;
+  gap: 4px;
+  border: 1px solid rgba(156, 53, 36, 0.28);
+  border-radius: 14px;
+  background: rgba(224, 90, 60, 0.1);
+  color: #703225;
+  padding: 14px 16px;
+}
+
+.access-notice strong {
+  color: #9c3524;
+  font-size: 16px;
+}
+
+.access-notice span {
+  color: var(--muted);
+  line-height: 1.35;
+}
+
+.settings.is-access-locked .form-grid,
+.actions.is-access-locked .cards {
+  display: none;
+}
+
 .transfer-controls {
   display: grid;
   grid-template-columns: minmax(260px, 620px);

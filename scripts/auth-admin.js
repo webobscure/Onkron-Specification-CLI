@@ -112,12 +112,21 @@ function normalizePassword(value) {
   return password;
 }
 
+function normalizeRole(value, fallback = "user") {
+  const role = String(value || fallback).trim().toLowerCase();
+  if (!["user", "advanced", "admin"].includes(role)) {
+    throw new Error("Роль должна быть одной из: user, advanced, admin");
+  }
+  return role;
+}
+
 function usage() {
   return `
 Использование:
   npm run auth:init-table
-  npm run auth:create-user -- <username> <password>
+  npm run auth:create-user -- <username> <password> [role]
   npm run auth:reset-password -- <username> <password>
+  npm run auth:set-role -- <username> <role>
   npm run auth:disable-user -- <username>
 `;
 }
@@ -129,25 +138,40 @@ async function initTable(connection, tableName) {
         id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
         username VARCHAR(100) NOT NULL UNIQUE,
         password_hash VARCHAR(255) NOT NULL,
+        role VARCHAR(20) NOT NULL DEFAULT 'user',
         is_active TINYINT(1) NOT NULL DEFAULT 1,
         created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
       )
     `
   );
 
+  try {
+    await connection.execute(
+      `
+        ALTER TABLE \`${tableName}\`
+        ADD COLUMN role VARCHAR(20) NOT NULL DEFAULT 'user'
+        AFTER password_hash
+      `
+    );
+  } catch (error) {
+    if (error?.code !== "ER_DUP_FIELDNAME") {
+      throw error;
+    }
+  }
+
   console.log(`Таблица готова: ${tableName}`);
 }
 
-async function createUser(connection, tableName, username, password) {
+async function createUser(connection, tableName, username, password, role = "user") {
   const hash = await bcrypt.hash(password, getRounds());
   await connection.execute(
     `
-      INSERT INTO \`${tableName}\` (username, password_hash, is_active)
-      VALUES (?, ?, 1)
+      INSERT INTO \`${tableName}\` (username, password_hash, role, is_active)
+      VALUES (?, ?, ?, 1)
     `,
-    [username, hash]
+    [username, hash, role]
   );
-  console.log(`Пользователь создан: ${username}`);
+  console.log(`Пользователь создан: ${username} (${role})`);
 }
 
 async function resetPassword(connection, tableName, username, password) {
@@ -187,6 +211,24 @@ async function disableUser(connection, tableName, username) {
   console.log(`Пользователь отключен: ${username}`);
 }
 
+async function setRole(connection, tableName, username, role) {
+  const [result] = await connection.execute(
+    `
+      UPDATE \`${tableName}\`
+      SET role = ?
+      WHERE username = ?
+      LIMIT 1
+    `,
+    [role, username]
+  );
+
+  if (result.affectedRows === 0) {
+    throw new Error(`Пользователь не найден: ${username}`);
+  }
+
+  console.log(`Роль обновлена: ${username} -> ${role}`);
+}
+
 async function main() {
   const args = process.argv.slice(2);
   if (args.includes("--help") || args.includes("-h")) {
@@ -215,7 +257,8 @@ async function main() {
     if (command === "create-user") {
       const username = normalizeUsername(arg1);
       const password = normalizePassword(arg2);
-      await createUser(connection, tableName, username, password);
+      const role = normalizeRole(args[3], "user");
+      await createUser(connection, tableName, username, password, role);
       return;
     }
 
@@ -229,6 +272,13 @@ async function main() {
     if (command === "disable-user") {
       const username = normalizeUsername(arg1);
       await disableUser(connection, tableName, username);
+      return;
+    }
+
+    if (command === "set-role") {
+      const username = normalizeUsername(arg1);
+      const role = normalizeRole(arg2);
+      await setRole(connection, tableName, username, role);
       return;
     }
 

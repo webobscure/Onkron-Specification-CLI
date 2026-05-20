@@ -64,7 +64,7 @@ function getSessionState() {
     return {
       required: false,
       authenticated: true,
-      user: { id: 0, username: "локально" },
+      user: { id: 0, username: "локально", role: "admin" },
     };
   }
 
@@ -82,6 +82,19 @@ function ensureAuthenticated() {
   }
   if (!session.authenticated) {
     throw new Error("Требуется авторизация");
+  }
+}
+
+function hasAdvancedAccess(user) {
+  const role = String(user?.role || "user").trim().toLowerCase();
+  return role === "advanced" || role === "admin";
+}
+
+function ensureAdvancedAccess() {
+  ensureAuthenticated();
+  const session = getSessionState();
+  if (!hasAdvancedAccess(session.user)) {
+    throw new Error("Недостаточно прав. Нужна роль advanced или admin.");
   }
 }
 
@@ -150,7 +163,7 @@ ipcMain.handle("spec:auth:logout", async () => {
 });
 
 ipcMain.handle("spec:run-task", async (_event, payload) => {
-  ensureAuthenticated();
+  ensureAdvancedAccess();
 
   const {
     task,

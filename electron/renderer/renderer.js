@@ -18,6 +18,10 @@ const progressCountEl = document.getElementById("progressCount");
 const progressBarEl = document.getElementById("progressBar");
 const transferSearchEl = document.getElementById("transferSearch");
 const loadTransferProductsEl = document.getElementById("loadTransferProducts");
+const advancedSettingsPanelEl = document.getElementById("advancedSettingsPanel");
+const advancedSettingsNoticeEl = document.getElementById("advancedSettingsNotice");
+const advancedTasksPanelEl = document.getElementById("advancedTasksPanel");
+const advancedTasksNoticeEl = document.getElementById("advancedTasksNotice");
 const transferProductsEl = document.getElementById("transferProducts");
 const transferSelectedProductEl = document.getElementById("transferSelectedProduct");
 const transferSpecsEl = document.getElementById("transferSpecs");
@@ -80,6 +84,7 @@ let authState = {
   authenticated: false,
   user: null,
 };
+const ADVANCED_ROLES = new Set(["advanced", "admin"]);
 const TASK_NAME_LABELS = {
   material: "Материал",
   color: "Цвет",
@@ -106,6 +111,26 @@ const TASK_NAME_LABELS = {
 function getTaskLabel(taskName) {
   const key = String(taskName || "").trim();
   return TASK_NAME_LABELS[key] || key || "-";
+}
+
+function getCurrentUserRole() {
+  return String(authState.user?.role || "user").trim().toLowerCase();
+}
+
+function hasAdvancedAccess() {
+  if (!authState.required) {
+    return true;
+  }
+
+  return authState.authenticated && ADVANCED_ROLES.has(getCurrentUserRole());
+}
+
+function applyAccessControls() {
+  const canUseAdvanced = hasAdvancedAccess();
+  advancedSettingsPanelEl.classList.toggle("is-access-locked", !canUseAdvanced);
+  advancedTasksPanelEl.classList.toggle("is-access-locked", !canUseAdvanced);
+  advancedSettingsNoticeEl.classList.toggle("hidden", canUseAdvanced);
+  advancedTasksNoticeEl.classList.toggle("hidden", canUseAdvanced);
 }
 
 function getProductSummaryText(product) {
@@ -878,24 +903,35 @@ function renderEditorSpecs(entries = editorEntries) {
 function refreshActionButtons() {
   const requiresAuth = authState.required && !authState.authenticated;
   const shouldDisable = isBusy || requiresAuth;
+  const canUseAdvanced = hasAdvancedAccess();
   for (const button of taskButtons) {
-    button.disabled = shouldDisable;
-    button.style.opacity = shouldDisable ? "0.65" : "1";
+    button.disabled = shouldDisable || !canUseAdvanced;
+    button.style.opacity = button.disabled ? "0.65" : "1";
   }
+
+  sourceLanguageIdEl.disabled = shouldDisable || !canUseAdvanced;
+  materialLanguageIdEl.disabled = shouldDisable || !canUseAdvanced;
+  targetLanguageIdEl.disabled = shouldDisable || !canUseAdvanced;
+  dryRunEl.disabled = shouldDisable || !canUseAdvanced;
 
   loadTransferProductsEl.disabled = shouldDisable;
   transferSearchEl.disabled = shouldDisable;
-  chooseTransferModeEl.disabled = shouldDisable || !selectedTransferProductId;
-  chooseEditModeEl.disabled = shouldDisable || !selectedTransferProductId;
+  chooseTransferModeEl.disabled =
+    shouldDisable || !selectedTransferProductId;
+  chooseEditModeEl.disabled =
+    shouldDisable || !selectedTransferProductId;
   openTransferSpecsModalEl.disabled =
     shouldDisable ||
     selectedProductActionMode !== "transfer" ||
     !selectedTransferProductId ||
     transferSpecEntries.length === 0;
-  selectAllTransferSpecsEl.disabled = shouldDisable || transferSpecEntries.length === 0;
-  clearTransferSpecsSelectionEl.disabled = shouldDisable || transferSpecEntries.length === 0;
+  selectAllTransferSpecsEl.disabled =
+    shouldDisable || transferSpecEntries.length === 0;
+  clearTransferSpecsSelectionEl.disabled =
+    shouldDisable || transferSpecEntries.length === 0;
   editorLanguageIdEl.disabled = shouldDisable || !selectedTransferProductId;
-  editorSpecsSearchEl.disabled = shouldDisable || editorEntries.length === 0;
+  editorSpecsSearchEl.disabled =
+    shouldDisable || editorEntries.length === 0;
   saveEditorSpecsEl.disabled =
     shouldDisable ||
     !selectedTransferProductId ||
@@ -920,6 +956,8 @@ function refreshActionButtons() {
   for (const checkbox of transferSpecsEl.querySelectorAll('input[type="checkbox"]')) {
     checkbox.disabled = shouldDisable;
   }
+
+  applyAccessControls();
 }
 
 function setBusy(nextValue) {
@@ -957,6 +995,10 @@ function formatTaskStats(taskStats) {
 async function runTask(task) {
   if (authState.required && !authState.authenticated) {
     appendOutput("ОШИБКА: Сначала выполните вход.", true);
+    return;
+  }
+  if (!hasAdvancedAccess()) {
+    appendOutput("ОШИБКА: Недостаточно прав. Нужна роль advanced или admin.", true);
     return;
   }
 
@@ -1004,9 +1046,21 @@ function fillLanguageSelect(selectEl, countries) {
 
 function fillEditorLanguageSelect(selectEl, countries) {
   selectEl.innerHTML = "";
-  editorLanguageOptions = [{ id: 1, label: "1 - RU" }];
+  const sourceLanguageId = Number(sourceLanguageIdEl.value || 1) || 1;
+  const sourceCountryCode =
+    countries && countries[sourceLanguageId]
+      ? countries[sourceLanguageId]
+      : sourceLanguageId === 1
+        ? "RU"
+        : "Источник";
+  editorLanguageOptions = [
+    { id: sourceLanguageId, label: `${sourceLanguageId} - ${sourceCountryCode}` },
+  ];
 
   for (const [languageId, countryCode] of Object.entries(countries)) {
+    if (Number(languageId) === sourceLanguageId) {
+      continue;
+    }
     editorLanguageOptions.push({
       id: Number(languageId),
       label: `${languageId} - ${countryCode}`,
@@ -1348,8 +1402,8 @@ async function ensureInitialized() {
 
   materialLanguageIdEl.value = ALL_TARGETS;
   targetLanguageIdEl.value = ALL_TARGETS;
-  editorLanguageIdEl.value = "2";
-  activeEditorLanguageId = 2;
+  editorLanguageIdEl.value = String(Number(sourceLanguageIdEl.value || 1) || 1);
+  activeEditorLanguageId = Number(editorLanguageIdEl.value || 1) || 1;
   isInitialized = true;
   appendOutput("GUI инициализирован.");
 }
@@ -1370,7 +1424,8 @@ function setSessionState(nextState) {
 
   if (authState.authenticated) {
     const username = authState.user?.username || "пользователь";
-    sessionStateEl.textContent = `Выполнен вход: ${username}`;
+    const role = getCurrentUserRole();
+    sessionStateEl.textContent = `Выполнен вход: ${username} · роль: ${role}`;
   } else if (authState.required) {
     sessionStateEl.textContent = "Вход не выполнен";
   } else {
